@@ -19,3 +19,6 @@ Finds and deduplicate files and directories.
 
 Simplifies rebalancing of files across drives.
 
+## mergerfs.mktrash
+
+Will create [FreeDesktop.org Trash specification](https://specifications.freedesktop.org/trash-spec/trashspec-1.0.html) compatible directories on a mergerfs mount. Helps minimize issues with apps which `rename` into the trash directory.
