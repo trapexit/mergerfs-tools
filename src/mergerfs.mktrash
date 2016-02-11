@@ -1,0 +1,28 @@
+#!/bin/bash
+
+TRASHDIR=".Trash"
+MOUNTPOINT="${1}"
+
+if [ "${MOUNTPOINT}" = "" ]; then
+    echo "usage: ${0} <mountpoint>"
+    exit 1
+fi
+
+if [ $EUID -ne 0 ]; then
+    echo "You must run ${0} as root"
+    exit 2
+fi
+
+if [ ! -e "${MOUNTPOINT}/.mergerfs" ]; then
+    echo "ERROR: ${MOUNTPOINT} does not appear to be a mergerfs mountpoint"
+    exit 3
+fi
+
+SRCMOUNTS=$(xattr -p user.mergerfs.srcmounts "${MOUNTPOINT}/.mergerfs" | tr : " ")
+for mount in ${SRCMOUNTS}
+do
+    DIR="${mount}/${TRASHDIR}"
+    mkdir -v --mode=1777 "${DIR}"
+done
+
+exit 0
