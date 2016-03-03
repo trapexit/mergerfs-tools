@@ -27,7 +27,11 @@ INSTALLBINDIR  = $(DESTDIR)$(BINDIR)
 INSTALLSBINDIR = $(DESTDIR)$(SBINDIR)
 INSTALLMAN1DIR = $(DESTDIR)$(MAN1DIR)
 
-fsck.mergerfs:
+APPS = mergerfs.fsck \
+       mergerfs.mktrash
 
-install: fsck.mergerfs
-	$(INSTALL) -v -m 0755 -D "src/$<" "$(INSTALLSBINDIR)/$<"
+install:
+	@for APP in $(APPS); \
+	 do \
+	    $(INSTALL) -v -m 0755 -D "src/$$APP" "$(INSTALLBINDIR)/$$APP"; \
+	 done
