@@ -28,7 +28,8 @@ INSTALLSBINDIR = $(DESTDIR)$(SBINDIR)
 INSTALLMAN1DIR = $(DESTDIR)$(MAN1DIR)
 
 APPS = mergerfs.fsck \
-       mergerfs.mktrash
+       mergerfs.mktrash \
+       mergerfs.dedup
 
 install:
 	@for APP in $(APPS); \
