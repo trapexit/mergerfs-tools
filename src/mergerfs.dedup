@@ -1,0 +1,180 @@
+#!/usr/bin/python
+
+# Copyright (c) 2016, Antonio SJ Musumeci <trapexit@spawn.link>
+
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+import argparse
+import os
+import xattr
+import errno
+import sys
+
+def ismergerfs(path):
+    try:
+        xattr.getxattr(path,"user.mergerfs.fullpath")
+        return True
+    except IOError as e:
+        return False
+
+
+def remove(tokeep,toremove):
+    for path in toremove:
+        try:
+            if path != tokeep:
+                os.remove(path)
+                print("removed {0}".format(path))
+        except Exception as e:
+            print("%s" % e)
+
+
+def size_equal(stats):
+    base = stats[0]
+    for stat in stats:
+        if stat[1].st_size != base[1].st_size:
+            return False
+    return True
+
+def print_stats(stats):
+    for i in xrange(0,len(stats)):
+        print("  %i: %s" % (i,stats[i][0]))
+        data = ("   - uid: {0:5}; gid: {1:5}; mode: {2:6o}; "
+                "size: {3:10}; mtime: {4}").format(
+            stats[i][1].st_uid,
+            stats[i][1].st_gid,
+            stats[i][1].st_mode,
+            stats[i][1].st_size,
+            stats[i][1].st_mtime)
+        print(data)
+
+
+def noop_dedup(stats):
+    pass
+
+
+def manual_dedup(stats):
+    done = False
+    while not done:
+        try:
+            value = input('Which is correct?: ')
+            stats.remove(stats[value % len(paths)])
+            remove(stats)
+            done = True
+        except NameError:
+            print("Input error: enter a value between 0 and %d" % (len(paths)-1))
+        except Exception as e:
+            print("%s" % e)
+            done = True
+
+
+def newest_dedup(stats):
+    stats.sort(key=lambda stat: stat.st_mtime)
+    try:
+        newest = stats[-1]
+        stats.remove(newest)
+        remove(newest)
+    except Exception as e:
+        print("%s" % e)
+
+
+def largest_dedup(stats):
+    stats.sort(key=lambda stat: stat.st_size)
+    try:
+        largest = stats[-1]
+        stats.remove(largest)
+        remove(stats)
+    except Exception as e:
+        print("%s" % e)
+
+
+def getdedupfun(name):
+    if name == 'manual':
+        return manual_dedup
+    elif name == 'newest':
+        return newest_dedup
+    elif name == 'largest':
+        return largest_dedup
+    return noop_dedup
+
+
+def getxattr(path,key):
+    try:
+        return xattr.getxattr(path,key,symlink=True)
+    except IOError as e:
+        if e.errno == errno.ENODATA:
+            return ""
+        raise
+
+
+def dedup(fullpath,verbose,ignoresize,dedupfun):
+    paths = getxattr(fullpath,"user.mergerfs.allpaths").split('\0')
+    if len(paths) <= 1:
+        return
+
+    stats = [(path,os.stat(path)) for path in paths]
+    if (ignoresize and size_equal(stats)):
+        return
+
+    print("%s" % fullpath)
+    if verbose:
+        print_stats(stats)
+    dedupfun(stats)
+
+
+def buildargparser():
+    parser = argparse.ArgumentParser(description='dedup files on a mergerfs mount')
+    parser.add_argument('dir',type=str,
+                        help='starting directory')
+    parser.add_argument('-v','--verbose',action='store_true',
+                        help='print details of files')
+    parser.add_argument('-i','--ignoresize',action='store_true',
+                        help='ignore files of the same size')
+    parser.add_argument('-d','--dedup',choices=['manual','newest','largest'],
+                        help='dedup policy')
+    return parser
+
+
+def main():
+    parser = buildargparser()
+    args = parser.parse_args()
+
+    if args.dedup:
+        args.verbose = True
+
+    dedupfun = getdedupfun(args.dedup)
+
+    args.dir = os.path.realpath(args.dir)
+    if not ismergerfs(args.dir):
+        print("%s is not a mergerfs directory" % args.dir)
+        sys.exit(1)
+
+    try:
+        verbose = args.verbose
+        ignoresize = args.ignoresize
+        for (dirname,dirnames,filenames) in os.walk(args.dir):
+            fulldirpath = os.path.join(args.dir,dirname)
+            #dedup(fulldirpath,verbose,ignoresize,dedupfun)
+            for filename in filenames:
+                fullpath = os.path.join(fulldirpath,filename)
+                dedup(fullpath,verbose,ignoresize,dedupfun)
+    except KeyboardInterrupt:
+        pass
+    except IOError as e:
+        if e.errno == errno.EPIPE:
+            pass
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
