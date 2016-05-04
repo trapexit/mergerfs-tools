@@ -72,19 +72,19 @@ def hash_file(filepath, hasher=None, blocksize=65536):
     if not hasher:
         hasher = hashlib.md5()
 
-    try:
-        with open(filepath,'rb') as afile:
+    with open(filepath,'rb') as afile:
+        buf = afile.read(blocksize)
+        while buf:
+            hasher.update(buf)
             buf = afile.read(blocksize)
-            while buf:
-                hasher.update(buf)
-                buf = afile.read(blocksize)
-    except:
-        pass
 
     return hasher.hexdigest()
 
 
 def get_file_list(basepath,fnfilter,db=None):
+    if os.path.isfile(basepath):
+        return [basepath]
+
     filelist = []
     for (dirname,dirnames,filenames) in os.walk(basepath):
         fulldirpath = os.path.join(basepath,dirname)
@@ -99,6 +99,9 @@ def get_file_list(basepath,fnfilter,db=None):
 
 
 def filter_filepaths(filepaths,basepath,fnfilter,other=(lambda f: False)):
+    if basepath in filepaths:
+        return [basepath]
+
     rv = []
     for filepath in filepaths:
         if not filepath.startswith(basepath):
@@ -199,6 +202,8 @@ def append_hashes(db,basepath,restrict,fnfilter,sort,
             dbadd[filepath] = (hashval,st)
             if verbose:
                 print(hashval)
+        except (KeyboardInterrupt,SystemExit):
+            raise
         except Exception as e:
             if verbose:
                 print(e)
@@ -250,6 +255,8 @@ def check_hashes(db,basepath,restrict,fnfilter,sort,
                     print("FAILED")
                 elif verbose:
                     print("OK")
+        except (KeyboardInterrupt,SystemExit):
+            raise
         except Exception as e:
             if not verbose:
                 print_filepath(actions,total,filepath)
@@ -463,6 +470,8 @@ def read_db(filepath):
     try:
         with open(filepath,'rb') as f:
             db = pickle.load(f)
+    except (KeyboardInterrupt,SystemExit):
+        raise
     except Exception as e:
         dirname = os.path.dirname(filepath)
         if not os.path.isdir(dirname):
@@ -484,6 +493,8 @@ def write_db(filepath,dbadd,dbremove):
         with os.fdopen(fd,'wb') as f:
             pickle.dump(db,f)
         os.rename(tmpfilepath,filepath)
+    except (KeyboardInterrupt,SystemExit):
+        raise
     except Exception as e:
         print('Error writing checksum DB:',e)
 
@@ -501,19 +512,19 @@ def main():
 
     rv = 0
     try:
-        db = read_db(args.db)
-        dbadd = {}
-        dbremove = []
-
         for directory in args.dir:
+            db = read_db(args.db)
+            dbadd = {}
+            dbremove = []
+
             directory = os.path.realpath(directory)
             rv = rv or func(db,directory,restrict,fnfilter,sort,
                             maxactions,verbose,dbadd,dbremove)
 
-        if len(dbadd) or len(dbremove):
-            write_db(args.db,dbadd,dbremove)
+            if len(dbadd) or len(dbremove):
+                write_db(args.db,dbadd,dbremove)
 
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt,SystemExit):
         rv = 1
     except IOError as e:
         rv = 1
