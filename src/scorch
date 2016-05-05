@@ -503,26 +503,27 @@ def main():
     parser = build_arg_parser()
     args = parser.parse_args()
 
+    dbpath = os.path.realpath(args.db)
     verbose = args.verbose
     restrict = restrict_fun(args.restrict)
     func = inst_fun(args.inst)
     sort = sort_fun(args.sort)
     fnfilter = filter_fun(args.fnfilter)
     maxactions = args.max
+    directories = [os.path.realpath(d) for d in args.dir]
 
     rv = 0
     try:
-        for directory in args.dir:
-            db = read_db(args.db)
+        for directory in directories:
+            db = read_db(dbpath)
             dbadd = {}
             dbremove = []
 
-            directory = os.path.realpath(directory)
             rv = rv or func(db,directory,restrict,fnfilter,sort,
                             maxactions,verbose,dbadd,dbremove)
 
             if len(dbadd) or len(dbremove):
-                write_db(args.db,dbadd,dbremove)
+                write_db(dbpath,dbadd,dbremove)
 
     except (KeyboardInterrupt,SystemExit):
         rv = 1
