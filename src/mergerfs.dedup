@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 # Copyright (c) 2016, Antonio SJ Musumeci <trapexit@spawn.link>
 
@@ -15,25 +15,44 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import argparse
-import os
-import xattr
 import errno
+import os
 import sys
+
 
 def ismergerfs(path):
     try:
-        xattr.getxattr(path,"user.mergerfs.fullpath")
+        os.getxattr(path,"user.mergerfs.fullpath")
         return True
     except IOError as e:
         return False
 
 
-def remove(tokeep,toremove):
-    for path in toremove:
+def sizeof_fmt(num):
+    for unit in ['','K','M','G','T','P','E','Z']:
+        if abs(num) < 1024.0:
+            return "%3.1f%sB" % (num,unit)
+        num /= 1024.0
+    return "%.1f%sB" % (num,'Y')
+
+
+def stat_files(paths):
+    rv = []
+    for path in paths:
         try:
-            if path != tokeep:
-                os.remove(path)
-                print("removed {0}".format(path))
+            st = os.stat(path)
+            rv.append((path,st))
+        except:
+            pass
+
+    return rv
+
+
+def remove(files):
+    for (path,stat) in files:
+        try:
+            os.remove(path)
+            print("removed {0}".format(path))
         except Exception as e:
             print("%s" % e)
 
@@ -45,56 +64,67 @@ def size_equal(stats):
             return False
     return True
 
+
 def print_stats(stats):
-    for i in xrange(0,len(stats)):
-        print("  %i: %s" % (i,stats[i][0]))
+    for i in range(0,len(stats)):
+        print("  %i: %s" % (i+1,stats[i][0]))
         data = ("   - uid: {0:5}; gid: {1:5}; mode: {2:6o}; "
-                "size: {3:10}; mtime: {4}").format(
+                "size: {3}; mtime: {4}").format(
             stats[i][1].st_uid,
             stats[i][1].st_gid,
             stats[i][1].st_mode,
-            stats[i][1].st_size,
+            sizeof_fmt(stats[i][1].st_size),
             stats[i][1].st_mtime)
         print(data)
 
 
+def total_size(stats):
+    total = 0
+    for (name,stat) in stats:
+        total = total + stat.st_size
+    return total
+
+
 def noop_dedup(stats):
-    pass
+    stats.pop()
 
 
 def manual_dedup(stats):
     done = False
     while not done:
         try:
-            value = input('Which is correct?: ')
-            stats.remove(stats[value % len(paths)])
-            remove(stats)
+            value = int(input('Which is keep?: ')) - 1
+            if value < 0 or value >= len(stats):
+                continue
+            stats.remove(stats[value])
             done = True
         except NameError:
-            print("Input error: enter a value between 0 and %d" % (len(paths)-1))
-        except Exception as e:
-            print("%s" % e)
-            done = True
+            print("Input error: enter a value [1,{0}]".format(len(stats)))
+        except ValueError:
+            print("Input error: enter a value [1,{0}]".format(len(stats)))
 
 
 def newest_dedup(stats):
-    stats.sort(key=lambda stat: stat.st_mtime)
-    try:
-        newest = stats[-1]
-        stats.remove(newest)
-        remove(newest)
-    except Exception as e:
-        print("%s" % e)
+    stats.sort(key=lambda stat: stat[1].st_mtime)
+    newest = stats[-1]
+    stats.remove(newest)
 
 
 def largest_dedup(stats):
-    stats.sort(key=lambda stat: stat.st_size)
-    try:
-        largest = stats[-1]
-        stats.remove(largest)
-        remove(stats)
-    except Exception as e:
-        print("%s" % e)
+    stats.sort(key=lambda stat: stat[1].st_size)
+    largest = stats[-1]
+    stats.remove(largest)
+
+
+def sort_space_free(stat):
+    st = os.statvfs(stat[0])
+    return st.f_frsize * st.f_bfree
+
+
+def drive_with_most_space_dedup(stats):
+    stats.sort(key=sort_space_free)
+    largest = stats[-1]
+    stats.remove(largest)
 
 
 def getdedupfun(name):
@@ -104,43 +134,69 @@ def getdedupfun(name):
         return newest_dedup
     elif name == 'largest':
         return largest_dedup
+    elif name == 'mostfreespace':
+        return drive_with_most_space_dedup
     return noop_dedup
 
 
 def getxattr(path,key):
     try:
-        return xattr.getxattr(path,key,symlink=True)
+        attr = os.getxattr(path,key)
+        return attr.decode('utf8')
     except IOError as e:
         if e.errno == errno.ENODATA:
-            return ""
+            return ''
         raise
+    except UnicodeDecodeError as e:
+        print(e)
+        print(attr)
+    return ''
 
 
-def dedup(fullpath,verbose,ignoresize,dedupfun):
+def dedup(fullpath,verbose,ignoresize,execute,dedupfun):
     paths = getxattr(fullpath,"user.mergerfs.allpaths").split('\0')
     if len(paths) <= 1:
-        return
+        return 0
 
-    stats = [(path,os.stat(path)) for path in paths]
+    stats = stat_files(paths)
     if (ignoresize and size_equal(stats)):
-        return
+        return 0
 
-    print("%s" % fullpath)
     if verbose:
+        print("%s" % fullpath)
+    if verbose >= 2:
         print_stats(stats)
-    dedupfun(stats)
+
+    try:
+        dedupfun(stats)
+        if execute:
+            remove(stats)
+
+        return total_size(stats)
+    except Exception as e:
+        print(e)
+
+    return 0
 
 
 def buildargparser():
     parser = argparse.ArgumentParser(description='dedup files on a mergerfs mount')
-    parser.add_argument('dir',type=str,
+    parser.add_argument('dir',
+                        type=str,
                         help='starting directory')
-    parser.add_argument('-v','--verbose',action='store_true',
-                        help='print details of files')
-    parser.add_argument('-i','--ignoresize',action='store_true',
+    parser.add_argument('-v','--verbose',
+                        action='count',
+                        default=0,
+                        help='once for duped files, twice for info')
+    parser.add_argument('-i','--ignoresize',
+                        action='store_true',
                         help='ignore files of the same size')
-    parser.add_argument('-d','--dedup',choices=['manual','newest','largest'],
+    parser.add_argument('-d','--dedup',
+                        choices=['manual','newest','largest','mostfreespace'],
                         help='dedup policy')
+    parser.add_argument('-e','--execute',
+                        action='store_true',
+                        help='without this it will dryrun')
     return parser
 
 
@@ -149,7 +205,7 @@ def main():
     args = parser.parse_args()
 
     if args.dedup:
-        args.verbose = True
+        args.verbose = 2
 
     dedupfun = getdedupfun(args.dedup)
 
@@ -158,20 +214,24 @@ def main():
         print("%s is not a mergerfs directory" % args.dir)
         sys.exit(1)
 
+    total_size = 0
     try:
         verbose = args.verbose
         ignoresize = args.ignoresize
+        execute = args.execute
         for (dirname,dirnames,filenames) in os.walk(args.dir):
             fulldirpath = os.path.join(args.dir,dirname)
-            #dedup(fulldirpath,verbose,ignoresize,dedupfun)
             for filename in filenames:
                 fullpath = os.path.join(fulldirpath,filename)
-                dedup(fullpath,verbose,ignoresize,dedupfun)
+                total_size = total_size + \
+                             dedup(fullpath,verbose,ignoresize,execute,dedupfun)
     except KeyboardInterrupt:
         pass
     except IOError as e:
         if e.errno == errno.EPIPE:
             pass
+
+    print("Total savings:",sizeof_fmt(total_size))
 
     sys.exit(0)
 
