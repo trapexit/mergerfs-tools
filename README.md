@@ -108,6 +108,39 @@ scorch -d /var/tmp/hash.db cleanup /tmp/files
 Since if a file's modify time or size change it is likely it was changed intentionally the **check+update** instruction will warn about the change and update the database rather than indicating it's a corruption ("FAILED"). Only if the mtime and size are the same and the hashes differ do we consider it corrupted.
 
 
+## mergerfs.ctl
+
+A wrapper around the mergerfs xattr interface.
+
+```
+$ mergerfs.ctl -h
+usage: mergerfs.ctl [-h] [-m MOUNT] {add,remove,list,get,set,info} ...
+
+positional arguments:
+  {add,remove,list,get,set,info}
+
+optional arguments:
+  -h, --help            show this help message and exit
+    -m MOUNT, --mount MOUNT
+                            mergerfs mount to act on
+$ mergerfs.ctl info
+- mount: /storage
+  version: 2.14.0
+  pid: 1234
+  srcmounts:
+    - /mnt/drive0
+    - /mnt/drive1
+$ mergerfs.ctl -m /storage add path /mnt/drive2
+$ mergerfs.ctl info
+- mount: /storage
+  version: 2.14.0
+  pid: 1234
+  srcmounts:
+    - /mnt/drive0
+    - /mnt/drive1
+    - /mnt/drive2
+```
+
 ## mergerfs.fsck
 
 Audits permissions and ownership of files and directories in a mergerfs mount and allows for manual and automatic fixing of them.
