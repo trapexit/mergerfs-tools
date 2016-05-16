@@ -64,6 +64,10 @@ def build_arg_parser():
                         type=int,
                         default=sys.maxsize,
                         help='max number of actions to take')
+    parser.add_argument('-b','--break-on-error',
+                        action='store_true',
+                        default=False,
+                        help='break on first failure / error')
 
     return parser
 
@@ -140,7 +144,8 @@ def different_files(oldst,newst):
 
 
 def add_hashes(db,basepath,restrict,fnfilter,sort,
-               maxactions,verbose,dbadd,dbremove):
+               maxactions,verbose,breakonerror,
+               dbadd,dbremove):
     rv = 1
     filepaths = get_file_list(basepath,fnfilter)
     sort(filepaths)
@@ -170,12 +175,15 @@ def add_hashes(db,basepath,restrict,fnfilter,sort,
         except Exception as e:
             if verbose:
                 print("ERROR:",e)
+            if breakonerror:
+                break
 
     return rv
 
 
 def append_hashes(db,basepath,restrict,fnfilter,sort,
-                  maxactions,verbose,dbadd,dbremove):
+                  maxactions,verbose,breakonerror,
+                  dbadd,dbremove):
     rv = 1
     filepaths = get_file_list(basepath,fnfilter,db)
     sort(filepaths)
@@ -207,12 +215,15 @@ def append_hashes(db,basepath,restrict,fnfilter,sort,
         except Exception as e:
             if verbose:
                 print(e)
+            if breakonerror:
+                break
 
     return rv
 
 
 def check_hashes(db,basepath,restrict,fnfilter,sort,
-                 maxactions,verbose,dbadd,dbremove,update=False):
+                 maxactions,verbose,breakonerror,
+                 dbadd,dbremove,update=False):
     rv = 0
     filepaths = filter_filepaths(db.keys(),basepath,fnfilter)
     sort(filepaths)
@@ -253,6 +264,8 @@ def check_hashes(db,basepath,restrict,fnfilter,sort,
                     if not verbose:
                         print_filepath(actions,total,filepath)
                     print("FAILED")
+                    if breakonerror:
+                        break
                 elif verbose:
                     print("OK")
         except (KeyboardInterrupt,SystemExit):
@@ -261,18 +274,23 @@ def check_hashes(db,basepath,restrict,fnfilter,sort,
             if not verbose:
                 print_filepath(actions,total,filepath)
             print('ERROR:',e)
+            if breakonerror:
+                break
 
     return rv
 
 
 def check_and_update_hashes(db,basepath,restrict,fnfilter,sort,
-                            maxactions,verbose,dbadd,dbremove):
+                            maxactions,verbose,breakonerror,
+                            dbadd,dbremove):
     return check_hashes(db,basepath,restrict,fnfilter,sort,
-                        maxactions,verbose,dbadd,dbremove,update=True)
+                        maxactions,verbose,breakonerror,
+                        dbadd,dbremove,update=True)
 
 
 def delete_hashes(db,basepath,restrict,fnfilter,sort,
-                  maxactions,verbose,dbadd,dbremove):
+                  maxactions,verbose,breakonerror,
+                  dbadd,dbremove):
     rv = 1
     filepaths = filter_filepaths(db.keys(),basepath,fnfilter)
     sort(filepaths)
@@ -298,7 +316,8 @@ def delete_hashes(db,basepath,restrict,fnfilter,sort,
 
 
 def cleanup_hashes(db,basepath,restrict,fnfilter,sort,
-                   maxactions,verbose,dbadd,dbremove):
+                   maxactions,verbose,breakonerror,
+                   dbadd,dbremove):
     rv = 1
     filepaths = filter_filepaths(db.keys(),basepath,fnfilter,os.path.exists)
     sort(filepaths)
@@ -320,7 +339,8 @@ def cleanup_hashes(db,basepath,restrict,fnfilter,sort,
 
 
 def list_hashes(db,basepath,restrict,fnfilter,sort,
-                maxactions,verbose,dbadd,dbremove):
+                maxactions,verbose,breakonerror,
+                dbadd,dbremove):
     rv = 1
     filepaths = filter_filepaths(db.keys(),basepath,fnfilter)
     sort(filepaths)
@@ -342,7 +362,8 @@ def list_hashes(db,basepath,restrict,fnfilter,sort,
 
 
 def list_unhashed(db,basepath,restrict,fnfilter,sort,
-                  maxactions,verbose,dbadd,dbremove):
+                  maxactions,verbose,breakonerror,
+                  dbadd,dbremove):
     rv = 1
     filepaths = get_file_list(basepath,fnfilter,db)
     sort(filepaths)
@@ -366,7 +387,8 @@ def list_unhashed(db,basepath,restrict,fnfilter,sort,
 
 
 def list_dups(db,basepath,restrict,fnfilter,sort,
-              maxactions,verbose,dbadd,dbremove):
+              maxactions,verbose,breakonerror,
+              dbadd,dbremove):
     rv = 1
     hashdb = {}
     for (filepath,(hashval,st)) in db.items():
@@ -510,6 +532,7 @@ def main():
     sort = sort_fun(args.sort)
     fnfilter = filter_fun(args.fnfilter)
     maxactions = args.max
+    breakonerror = args.break_on_error
     directories = [os.path.realpath(d) for d in args.dir]
 
     rv = 0
@@ -520,10 +543,14 @@ def main():
             dbremove = []
 
             rv = rv or func(db,directory,restrict,fnfilter,sort,
-                            maxactions,verbose,dbadd,dbremove)
+                            maxactions,verbose,breakonerror,
+                            dbadd,dbremove)
 
             if len(dbadd) or len(dbremove):
                 write_db(dbpath,dbadd,dbremove)
+
+            if breakonerror and rv:
+                break
 
     except (KeyboardInterrupt,SystemExit):
         rv = 1
