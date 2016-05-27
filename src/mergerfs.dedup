@@ -62,11 +62,15 @@ def stat_files(paths):
     return rv
 
 
-def remove(files):
+def remove(files,execute,verbose):
     for (path,stat) in files:
         try:
-            os.remove(path)
-            print("removed {0}".format(path))
+            if execute:
+                os.remove(path)
+                if verbose:
+                    print("removed {0}".format(path))
+            elif verbose:
+                print("would remove {0}".format(path))
         except Exception as e:
             print("%s" % e)
 
@@ -193,10 +197,10 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
 
     try:
         dedupfun(stats)
-        if execute:
-            remove(stats)
+        remove(stats,execute,verbose)
 
         return total_size(stats)
+
     except Exception as e:
         print(e)
 
@@ -228,9 +232,6 @@ def buildargparser():
 def main():
     parser = buildargparser()
     args = parser.parse_args()
-
-    if args.dedup:
-        args.verbose = 2
 
     dedupfun = getdedupfun(args.dedup)
 
