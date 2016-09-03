@@ -29,7 +29,8 @@ INSTALLMAN1DIR = $(DESTDIR)$(MAN1DIR)
 
 APPS = mergerfs.fsck \
        mergerfs.mktrash \
-       mergerfs.dedup
+       mergerfs.dedup \
+       mergerfs.ctl
 
 install:
 	@for APP in $(APPS); \
