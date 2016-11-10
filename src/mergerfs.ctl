@@ -39,12 +39,12 @@ def ask_about_path(paths):
 
 
 def device2mount(device):
-    with open('/proc/mounts','rb') as f:
+    with open('/proc/mounts','r') as f:
         for line in f:
             columns = line.split()
             if columns[0] == device:
                 return columns[1]
-    with open('/etc/fstab','rb') as f:
+    with open('/etc/fstab','r') as f:
         for line in f:
             columns = line.split()
             try:
@@ -64,14 +64,20 @@ def control_file(path):
 
 def add_srcmount(ctrlfile,srcmount):
     key   = b'user.mergerfs.srcmounts'
-    value = b'+' + srcmount
-    os.setxattr(ctrlfile,key,value)
+    value = b'+' + srcmount.encode()
+    try:
+        os.setxattr(ctrlfile,key,value)
+    except Exception as e:
+        print(e)
 
 
 def remove_srcmount(ctrlfile,srcmount):
     key   = b'user.mergerfs.srcmounts'
-    value = b'-' + srcmount
-    os.setxattr(ctrlfile,key,value)
+    value = b'-' + srcmount.encode()
+    try:
+        os.setxattr(ctrlfile,key,value)
+    except Exception as e:
+        print(e)
 
 
 def normalize_key(key):
@@ -153,10 +159,10 @@ def cmd_add_device(fspaths,args):
     for fspath in fspaths:
         ctrlfile = control_file(fspath)
         mount = device2mount(args.path)
-        if path:
+        if mount:
             add_srcmount(ctrlfile,mount)
         else:
-            print('{0} not found'.format(args.path.decode()))
+            print('{0} not found'.format(args.path))
 
 def cmd_add_path(fspaths,args):
     for fspath in fspaths:
@@ -174,7 +180,7 @@ def cmd_remove_device(fspaths,args):
     for fspath in fspaths:
         ctrlfile = control_file(fspath)
         mount = device2mount(args.path)
-        if path:
+        if mount:
             remove_srcmount(ctrlfile,mount)
         else:
             print('{0} not found'.format(args.path.decode()))
