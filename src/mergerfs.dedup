@@ -118,16 +118,23 @@ def noop_dedup(stats):
 def manual_dedup(stats):
     done = False
     while not done:
+        value = input('Which is keep?: ')
+
+        if value.lower() in ('skip', ''):
+            stats.clear()
+            done = True
+            continue
+
         try:
-            value = int(input('Which is keep?: ')) - 1
+            value = int(value) - 1
             if value < 0 or value >= len(stats):
-                continue
+                raise ValueError
             stats.remove(stats[value])
             done = True
         except NameError:
-            print("Input error: enter a value [1,{0}]".format(len(stats)))
+            print("Input error: enter a value [skip, (1-{0})]".format(len(stats)))
         except ValueError:
-            print("Input error: enter a value [1,{0}]".format(len(stats)))
+            print("Input error: enter a value [skip, (1-{0})]".format(len(stats)))
 
 
 def newest_dedup(stats):
