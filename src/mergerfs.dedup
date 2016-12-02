@@ -118,9 +118,9 @@ def noop_dedup(stats):
 def manual_dedup(stats):
     done = False
     while not done:
-        value = input('Which is keep?: ')
+        value = input("Which to keep? ('s' to skip):")
 
-        if value.lower() in ('skip', ''):
+        if value.lower() == 's':
             stats.clear()
             done = True
             continue
@@ -132,9 +132,9 @@ def manual_dedup(stats):
             stats.remove(stats[value])
             done = True
         except NameError:
-            print("Input error: enter a value [skip, (1-{0})]".format(len(stats)))
+            print("Input error: enter a value [1-{0}] or skip by entering 's'".format(len(stats)))
         except ValueError:
-            print("Input error: enter a value [skip, (1-{0})]".format(len(stats)))
+            print("Input error: enter a value [1-{0}] or skip by entering 's'".format(len(stats)))
 
 
 def newest_dedup(stats):
