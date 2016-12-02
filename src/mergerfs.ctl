@@ -209,7 +209,7 @@ def cmd_list_options(fspaths,args):
 
 def cmd_list_values(fspaths,args):
     for fspath in fspaths:
-        ctrlfile = contrl_file(fspath)
+        ctrlfile = control_file(fspath)
         keys = os.listxattr(ctrlfile)
         output = ('- mount: {0}\n'
                   '  options:\n').format(fspath)
@@ -233,7 +233,11 @@ def cmd_set(fspaths,args):
     for fspath in fspaths:
         ctrlfile = control_file(fspath)
         key = normalize_key(args.option)
-        os.setxattr(ctrlfile,key,args.value)
+        value = args.value.encode()
+        try:
+            os.setxattr(ctrlfile,key,value)
+        except Exception as e:
+            print(e)
 
 
 def cmd_info(fspaths,args):
