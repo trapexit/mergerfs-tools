@@ -82,12 +82,30 @@ $ mergerfs.dedup -v -d manual -v /path/to/dir
 ```
 
 
-## mergerfs.rebalance
+## mergerfs.balance
 
-**TO BE CREATED**
+Will move files from the most filled drive (percentage wise) to the least filled drive. Will do so till the most and least filled drives come within a user defined percentage range (defaults to 10.0).
 
-Simplifies rebalancing of files across drives.
+Please run as `root`.
 
+```
+# mergerfs.balance --help
+usage: mergerfs.balance [-h] [-p PERCENTAGE] dir
+
+balance files on a mergerfs mount based on percentage drive filled
+
+positional arguments:
+  dir            starting directory
+
+optional arguments:
+  -h, --help     show this help message and exit
+  -p PERCENTAGE  percentage range of freespace (default 10.0)
+
+# mergerfs.balance /media
+src: /mnt/drive1/foo/bar
+dst: /mnt/drive2/foo/bar
+...
+```
 
 ## mergerfs.mktrash
 

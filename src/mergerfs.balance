@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+
+# Copyright (c) 2016, Antonio SJ Musumeci <trapexit@spawn.link>
+#
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+import argparse
+import errno
+import os
+import subprocess
+import stat
+import sys
+import tempfile
+import time
+import shutil
+
+
+class Error(OSError):
+    pass
+
+
+def ismergerfs(path):
+    try:
+        os.getxattr(path,'user.mergerfs.version')
+        return True
+    except IOError as e:
+        return False
+
+
+def mergerfs_control_file(basedir):
+    return os.path.join(basedir,'.mergerfs')
+
+
+def mergerfs_srcmounts(ctrlfile):
+    srcmounts = os.getxattr(ctrlfile,'user.mergerfs.srcmounts')
+    srcmounts = srcmounts.decode().split(':')
+    return srcmounts
+
+
+def move(src, dst):
+    dstdir = os.path.dirname(dst)
+    dstfile = os.path.basename(dst)
+    dsttmp = tempfile.mktemp(prefix='.'+dstfile,dir=dstdir)
+    try:
+        print("src: %s\ndst: %s\n" % (src,dst))
+        shutil.copy2(src,dsttmp)
+    except KeyboardInterrupt as e:
+        print("\nremoving tempfile: %s" % dsttmp)
+        os.remove(dsttmp)
+        raise(e)
+    os.rename(dsttmp,dst)
+    os.remove(src)
+
+
+def copy_a_file(src, dst, copy_function=move):
+    names = os.listdir(src)
+
+    errors  = []
+    srcrv = None
+    dstrv = None
+    os.makedirs(dst,exist_ok=True)
+    for name in names:
+        srcname = os.path.join(src, name)
+        dstname = os.path.join(dst, name)
+        try:
+            if os.path.islink(srcname):
+                linkto = os.readlink(srcname)
+                os.symlink(linkto, dstname)
+                shutil.copystat(srcname, dstname, follow_symlinks=False)
+                (srcrv,dstrv) = (srcname,dstname)
+                break
+            elif os.path.isdir(srcname):
+                rv = copy_a_file(srcname, dstname, copy_function)
+                if rv:
+                    (srcrv,dstrv) = rv
+                    break
+            else:
+                copy_function(srcname, dstname)
+                (srcrv,dstrv) = (srcname,dstname)
+                break
+        except Error as err:
+            errors.extend(err.args[0])
+        except OSError as why:
+            errors.append((srcname, dstname, str(why)))
+    try:
+        shutil.copystat(src, dst)
+    except OSError as why:
+        errors.append((src, dst, str(why)))
+
+    if errors:
+        raise Error(errors)
+
+    if srcrv and dstrv:
+        return (srcrv,dstrv)
+    return None
+
+
+def freespace_percentage(srcmounts):
+    lfsp = []
+    for srcmount in srcmounts:
+        vfs = os.statvfs(srcmount)
+        avail = vfs.f_bavail * vfs.f_frsize
+        total = vfs.f_blocks * vfs.f_frsize
+        per = avail / total
+        lfsp.append((srcmount,per))
+    return sorted(lfsp, key=lambda x: x[1])
+
+
+def all_within_range(l,n):
+    if len(l) == 0 or len(l) == 1:
+        return True
+    return (abs(l[0][1] - l[-1][1]) <= n)
+
+
+def buildargparser():
+    parser = argparse.ArgumentParser(description='balance files on a mergerfs mount based on percentage drive filled')
+    parser.add_argument('dir',
+                        type=str,
+                        help='starting directory')
+    parser.add_argument('-p',
+                        dest='percentage',
+                        type=float,
+                        default=10.0,
+                        help='percentage range of freespace (default 10.0)')
+    return parser
+
+
+def main():
+    parser = buildargparser()
+    args = parser.parse_args()
+
+    args.dir = os.path.realpath(args.dir)
+
+    ctrlfile = mergerfs_control_file(args.dir)
+    if not ismergerfs(ctrlfile):
+        print("%s is not a mergerfs mount" % args.dir)
+        sys.exit(1)
+
+    srcmounts = mergerfs_srcmounts(ctrlfile)
+
+    percentage = args.percentage / 100
+    try:
+        l = freespace_percentage(srcmounts)
+        while not all_within_range(l,percentage):
+            fromdrive = l[0][0]
+            todrive   = l[-1][0]
+            rv = copy_a_file(fromdrive,todrive)
+            if not rv:
+                break;
+            l = freespace_percentage(srcmounts)
+    except KeyboardInterrupt:
+        print("exiting: CTRL-C pressed")
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+   main()

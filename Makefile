@@ -30,7 +30,8 @@ INSTALLMAN1DIR = $(DESTDIR)$(MAN1DIR)
 APPS = mergerfs.fsck \
        mergerfs.mktrash \
        mergerfs.dedup \
-       mergerfs.ctl
+       mergerfs.ctl \
+       mergerfs.balance
 
 install:
 	@for APP in $(APPS); \
