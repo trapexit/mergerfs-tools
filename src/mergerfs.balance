@@ -15,18 +15,9 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import argparse
-import errno
 import os
 import subprocess
-import stat
 import sys
-import tempfile
-import time
-import shutil
-
-
-class Error(OSError):
-    pass
 
 
 def ismergerfs(path):
@@ -47,71 +38,29 @@ def mergerfs_srcmounts(ctrlfile):
     return srcmounts
 
 
-def move(src, dst):
-    dstdir = os.path.dirname(dst)
-    dstfile = os.path.basename(dst)
-    dsttmp = tempfile.mktemp(prefix='.'+dstfile,dir=dstdir)
-    try:
-        print("src: %s\ndst: %s\n" % (src,dst),flush=True)
-        shutil.copy2(src,dsttmp)
-    except KeyboardInterrupt as e:
-        print("\nremoving tempfile: %s" % dsttmp)
-        os.unlink(dsttmp)
-        raise(e)
-    os.rename(dsttmp,dst)
-    os.unlink(src)
+def find_a_file(src):
+    for (dirpath,dirnames,filenames) in os.walk(src):
+        if filenames:
+            relfile = os.path.join(dirpath,filenames[0])
+            relfile = relfile[len(src)+1:]
+            return relfile
 
 
-def move_symlink(src,dst):
-    link = os.readlink(src)
-    dstdir = os.path.dirname(dst)
-    dstfile = os.path.basename(dst)
-    dsttmp = tempfile.mktemp(prefix='.'+dstfile,dir=dstdir)
-    os.symlink(link,dsttmp)
-    shutil.copystat(src,dsttmp,follow_symlinks=False)
-    os.rename(dsttmp,dst)
-    os.unlink(src)
-    print("src: %s\ndst: %s\n" % (src,dst),flush=True)
+def execute(args):
+    return subprocess.call(args)
 
 
-def move_a_file(src, dst):
-    errors = []
-    srcrv  = None
-    dstrv  = None
-    names  = os.listdir(src)
-    os.makedirs(dst,exist_ok=True)
-    for name in names:
-        srcname = os.path.join(src,name)
-        dstname = os.path.join(dst,name)
-        try:
-            if os.path.islink(srcname):
-                move_symlink(srcname,dstname)
-                (srcrv,dstrv) = (srcname,dstname)
-                break
-            elif os.path.isdir(srcname):
-                rv = move_a_file(srcname,dstname)
-                if rv:
-                    (srcrv,dstrv) = rv
-                    break
-            else:
-                move(srcname,dstname)
-                (srcrv,dstrv) = (srcname,dstname)
-                break
-        except Error as err:
-            errors.extend(err.args[0])
-        except OSError as why:
-            errors.append(str(why))
-    try:
-        shutil.copystat(src, dst)
-    except OSError as why:
-        errors.append(str(why))
-
-    if errors:
-        raise Error(errors)
-
-    if srcrv and dstrv:
-        return (srcrv,dstrv)
-    return None
+def move_file(src,dst,relfile):
+    frompath = os.path.join(src,'./',relfile)
+    topath   = dst+'/'
+    args = ['rsync',
+            '-alXA',
+            '--relative',
+            '--progress',
+            '--remove-source-files',
+            frompath,
+            topath]
+    return execute(args)
 
 
 def freespace_percentage(srcmounts):
@@ -161,10 +110,13 @@ def main():
     try:
         l = freespace_percentage(srcmounts)
         while not all_within_range(l,percentage):
-            fromdrive = l[0][0]
-            todrive   = l[-1][0]
-            rv = move_a_file(fromdrive,todrive)
-            if not rv:
+            fromdrive   = l[0][0]
+            todrive     = l[-1][0]
+            relfilepath = find_a_file(fromdrive)
+            if not relfilepath:
+                break
+            rv = move_file(fromdrive,todrive,relfilepath)
+            if rv:
                 break;
             l = freespace_percentage(srcmounts)
     except KeyboardInterrupt:
