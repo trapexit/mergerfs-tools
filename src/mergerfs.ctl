@@ -112,7 +112,6 @@ def print_mergerfs_info(fspaths):
 def build_arg_parser():
     desc = 'a tool for runtime manipulation of mergerfs'
     parser = argparse.ArgumentParser(description=desc)
-    parser.set_defaults(func=None)
 
     subparsers = parser.add_subparsers(dest='command')
 
