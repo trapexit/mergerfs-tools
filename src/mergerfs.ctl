@@ -260,7 +260,7 @@ def main():
     elif args.mount and args.mount not in fspaths:
         print_and_exit('{0} is not a mergerfs mount'.format(args.mount),1)
 
-    if args.func:
+    if hasattr(args, 'func'):
         args.func(fspaths,args)
     else:
         parser.print_help()
