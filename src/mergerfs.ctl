@@ -112,7 +112,6 @@ def print_mergerfs_info(fspaths):
 def build_arg_parser():
     desc = 'a tool for runtime manipulation of mergerfs'
     parser = argparse.ArgumentParser(description=desc)
-    parser.set_defaults(func=None)
 
     subparsers = parser.add_subparsers(dest='command')
 
@@ -261,7 +260,7 @@ def main():
     elif args.mount and args.mount not in fspaths:
         print_and_exit('{0} is not a mergerfs mount'.format(args.mount),1)
 
-    if args.func:
+    if hasattr(args, 'func'):
         args.func(fspaths,args)
     else:
         parser.print_help()
