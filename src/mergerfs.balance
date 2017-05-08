@@ -15,6 +15,7 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import argparse
+import fnmatch
 import os
 import subprocess
 import sys
@@ -38,12 +39,24 @@ def mergerfs_srcmounts(ctrlfile):
     return srcmounts
 
 
-def find_a_file(src):
+def match(filename,matches):
+    for match in matches:
+        if fnmatch.fnmatch(filename,match):
+            return True
+    return False
+
+
+def find_a_file(src,includes,excludes):
     for (dirpath,dirnames,filenames) in os.walk(src):
-        if filenames:
-            relfile = os.path.join(dirpath,filenames[0])
+        for filename in filenames:
+            if match(filename,excludes):
+                continue
+            if not match(filename,includes):
+                continue
+            relfile = os.path.join(dirpath,filename)
             relfile = relfile[len(src)+1:]
             return relfile
+    return None
 
 
 def execute(args):
@@ -88,8 +101,20 @@ def buildargparser():
     parser.add_argument('-p',
                         dest='percentage',
                         type=float,
-                        default=10.0,
-                        help='percentage range of freespace (default 10.0)')
+                        default=2.0,
+                        help='percentage range of freespace (default 2.0)')
+    parser.add_argument('-i','--include',
+                        dest='include',
+                        type=str,
+                         action='append',
+                        default=[],
+                        help='fnmatch compatible file filter (can use multiple times)')
+    parser.add_argument('-e','--exclude',
+                        dest='exclude',
+                        type=str,
+                        action='append',
+                        default=[],
+                        help='fnmatch compatible file filter (can use multiple times)')
     return parser
 
 
@@ -104,6 +129,8 @@ def main():
         print("%s is not a mergerfs mount" % args.dir)
         sys.exit(1)
 
+    includes  = ['*'] if not args.include else args.include
+    excludes  = args.exclude
     srcmounts = mergerfs_srcmounts(ctrlfile)
 
     percentage = args.percentage / 100
@@ -112,7 +139,7 @@ def main():
         while not all_within_range(l,percentage):
             fromdrive   = l[0][0]
             todrive     = l[-1][0]
-            relfilepath = find_a_file(fromdrive)
+            relfilepath = find_a_file(fromdrive,includes,excludes)
             if not relfilepath:
                 break
             rv = move_file(fromdrive,todrive,relfilepath)
