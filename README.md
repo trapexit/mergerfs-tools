@@ -90,16 +90,22 @@ Please run as `root`.
 
 ```
 # mergerfs.balance --help
-usage: mergerfs.balance [-h] [-p PERCENTAGE] dir
+usage: mergerfs.balance [-h] [-p PERCENTAGE] [-i INCLUDE] [-e EXCLUDE] dir
 
 balance files on a mergerfs mount based on percentage drive filled
 
 positional arguments:
-  dir            starting directory
+  dir                   starting directory
 
 optional arguments:
-  -h, --help     show this help message and exit
-  -p PERCENTAGE  percentage range of freespace (default 10.0)
+  -h, --help            show this help message and exit
+  -p PERCENTAGE         percentage range of freespace (default 2.0)
+  -i INCLUDE, --include INCLUDE
+                        fnmatch compatible file filter (can use multiple
+                        times)
+  -e EXCLUDE, --exclude EXCLUDE
+                        fnmatch compatible file filter (can use multiple
+                        times)
 
 # mergerfs.balance /media
 src: /mnt/drive1/foo/bar
