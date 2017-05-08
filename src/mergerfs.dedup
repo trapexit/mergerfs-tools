@@ -16,6 +16,7 @@
 
 import argparse
 import errno
+import fnmatch
 import os
 import sys
 import hashlib
@@ -186,19 +187,30 @@ def getxattr(path,key):
     return ''
 
 
+def match(filename,matches):
+    for match in matches:
+        if fnmatch.fnmatch(filename,match):
+            return True
+    return False
+
+
 def dedup(fullpath,verbose,ignore,execute,dedupfun):
     paths = getxattr(fullpath,"user.mergerfs.allpaths").split('\0')
     if len(paths) <= 1:
         return 0
 
     stats = stat_files(paths)
-    if (ignore and size_equal(stats)):
-        if (ignore >= 2 and md5sums_equal(paths)):
-            return 0
+    if ((ignore == 1) and size_equal(stats)):
+        if verbose:
+            print('ignored:',fullpath)
+        return 0
+    if ((ignore >= 2) and md5sums_equal(paths)):
+        if verbose:
+            print('ignored:',fullpath)
         return 0
 
     if verbose:
-        print("%s" % fullpath)
+        print(fullpath)
     if verbose >= 2:
         print_stats(stats)
 
@@ -233,6 +245,16 @@ def buildargparser():
     parser.add_argument('-e','--execute',
                         action='store_true',
                         help='without this it will dryrun')
+    parser.add_argument('-I','--include',
+                        type=str,
+                        action='append',
+                        default=[],
+                        help='fnmatch compatible filter (can use multiple times')
+    parser.add_argument('-E','--exclude',
+                        type=str,
+                        action='append',
+                        default=[],
+                        help='fnmatch compatible filter (can use multiple times')
     return parser
 
 
@@ -241,6 +263,8 @@ def main():
     args = parser.parse_args()
 
     dedupfun = getdedupfun(args.dedup)
+    if args.dedup == 'manual' and args.verbose == 0:
+        args.verbose = 2
 
     args.dir = os.path.realpath(args.dir)
     if not ismergerfs(args.dir):
@@ -249,17 +273,22 @@ def main():
 
     total_size = 0
     try:
-        verbose = args.verbose
-        ignore = args.ignore
-        execute = args.execute
+        verbose  = args.verbose
+        ignore   = args.ignore
+        execute  = args.execute
+        includes = ['*'] if not args.include else args.include
+        excludes = args.exclude
         for (dirname,dirnames,filenames) in os.walk(args.dir):
-            fulldirpath = os.path.join(args.dir,dirname)
             for filename in filenames:
-                fullpath = os.path.join(fulldirpath,filename)
+                if match(filename,excludes):
+                    continue
+                if not match(filename,includes):
+                    continue
+                fullpath = os.path.join(dirname,filename)
                 total_size = total_size + \
                              dedup(fullpath,verbose,ignore,execute,dedupfun)
     except KeyboardInterrupt:
-        pass
+        print("exiting: CTRL-C pressed")
     except IOError as e:
         if e.errno == errno.EPIPE:
             pass
