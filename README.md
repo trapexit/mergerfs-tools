@@ -64,21 +64,36 @@ $ mergerfs.fsck -v -f manual /path/to/dir
 Finds and deduplicate files.
 
 ```
-$ mergerfs.dedup -h
-usage: mergerfs.dedup [-h] [-v] [-i] [-d {manual,newest,largest}] dir
+# mergerfs.dedup -h
+usage: mergerfs.dedup [-h] [-v] [-i]
+                      [-d {manual,newest,largest,mostfreespace}] [-e]
+                      [-I INCLUDE] [-E EXCLUDE]
+                      dir
 
 dedup files on a mergerfs mount
 
 positional arguments:
   dir                   starting directory
 
-  optional arguments:
-    -h, --help            show this help message and exit
-    -v, --verbose         print details of files
-    -i, --ignoresize      ignore files of the same size
-    -d {manual,newest,largest}, --dedup {manual,newest,largest}
-                          dedup policy
-$ mergerfs.dedup -v -d manual -v /path/to/dir
+optional arguments:
+  -h, --help            show this help message and exit
+  -v, --verbose         print additional information: use once for duped
+                        files, twice for file info
+  -i, --ignore          use once to ignore duped files of the same size, twice
+                        to ignore files with matching md5sums
+  -d {manual,newest,largest,mostfreespace}, --dedup {manual,newest,largest,mostfreespace}
+                        dedup policy: what file to keep
+  -e, --execute         without this it will dryrun
+  -I INCLUDE, --include INCLUDE
+                        fnmatch compatible filter (can use multiple times
+  -E EXCLUDE, --exclude EXCLUDE
+                        fnmatch compatible filter (can use multiple times
+
+# mergerfs.dedup /path/to/dir
+Total savings: 38.0GB
+
+# mergerfs.dedup -e -d manual /path/to/dir
+...
 ```
 
 
