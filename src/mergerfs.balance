@@ -36,7 +36,7 @@ def lgetxattr(path,name):
         buf = ctypes.create_string_buffer(length)
         res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
         if res >= 0:
-            return buf.value
+            return buf.raw[0:res]
         else:
             err = ctypes.get_errno()
             if err == errno.ERANGE:

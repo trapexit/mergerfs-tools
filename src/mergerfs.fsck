@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2016, Antonio SJ Musumeci <trapexit@spawn.link>
 
@@ -15,14 +15,39 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import argparse
-import os
-import xattr
+import ctypes
 import errno
+import os
 import sys
+
+
+_libc = ctypes.CDLL("libc.so.6",use_errno=True)
+_lgetxattr = _libc.lgetxattr
+_lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
+def lgetxattr(path,name):
+    if type(path) == str:
+        path = path.encode('utf8')
+    if type(name) == str:
+        name = name.encode('utf8')
+    length = 64
+    while True:
+        buf = ctypes.create_string_buffer(length)
+        res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
+        if res >= 0:
+            return buf.raw[0:res]
+        else:
+            err = ctypes.get_errno()
+            if err == errno.ERANGE:
+                length *= 2
+            elif err == errno.ENODATA:
+                return None
+            else:
+                raise IOError(err,os.strerror(err),path)
+
 
 def ismergerfs(path):
     try:
-        xattr.getxattr(path,"user.mergerfs.fullpath")
+        lgetxattr(path,"user.mergerfs.fullpath")
         return True
     except IOError as e:
         return False
@@ -57,8 +82,8 @@ def size_equal(stats):
     return True
 
 def print_stats(Files,Stats):
-    for i in xrange(0,len(Files)):
-        print("  %i: %s" % (i,Files[i]))
+    for i in range(0,len(Files)):
+        print("  %i: %s" % (i,Files[i].decode()))
         data = ("   - uid: {0:5}; gid: {1:5}; mode: {2:6o}; "
                 "size: {3:10}; mtime: {4}").format(
             Stats[i].st_uid,
@@ -78,10 +103,12 @@ def manual_fix(paths,stats):
     while not done:
         try:
             value = input('Which is correct?: ')
-            setstat(stats[value % len(paths)],paths)
+            value = int(value)
+            if((value >= len(paths)) or (value < 0)):
+                print("Input error: enter a value [0,%d]" % (len(paths)-1))
+                continue
+            setstat(stats[value],paths)
             done = True
-        except NameError:
-            print("Input error: enter a value between 0 and %d" % (len(paths)-1))
         except Exception as e:
             print("%s" % e)
             done = True
@@ -117,17 +144,11 @@ def getfixfun(name):
     return noop_fix
 
 
-def getxattr(path,key):
-    try:
-        return xattr.getxattr(path,key,symlink=True)
-    except IOError as e:
-        if e.errno == errno.ENODATA:
-            return ""
-        raise
-
-
 def check_consistancy(fullpath,verbose,size,fix):
-    paths = getxattr(fullpath,"user.mergerfs.allpaths").split('\0')
+    paths = lgetxattr(fullpath,"user.mergerfs.allpaths")
+    if not paths:
+        return
+    paths = paths.split(b'\0')
     if len(paths) <= 1:
         return
 
