@@ -15,15 +15,41 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import argparse
+import ctypes
+import errno
 import fnmatch
 import os
 import subprocess
 import sys
 
 
+_libc = ctypes.CDLL("libc.so.6",use_errno=True)
+_lgetxattr = _libc.lgetxattr
+_lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
+def lgetxattr(path,name):
+    if type(path) == str:
+        path = path.encode('utf8')
+    if type(name) == str:
+        name = name.encode('utf8')
+    length = 64
+    while True:
+        buf = ctypes.create_string_buffer(length)
+        res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
+        if res >= 0:
+            return buf.value
+        else:
+            err = ctypes.get_errno()
+            if err == errno.ERANGE:
+                length *= 2
+            elif err == errno.ENODATA:
+                return None
+            else:
+                raise IOError(err,os.strerror(err),path)
+
+
 def ismergerfs(path):
     try:
-        os.getxattr(path,'user.mergerfs.version')
+        lgetxattr(path,'user.mergerfs.version')
         return True
     except IOError as e:
         return False
@@ -34,7 +60,7 @@ def mergerfs_control_file(basedir):
 
 
 def mergerfs_srcmounts(ctrlfile):
-    srcmounts = os.getxattr(ctrlfile,'user.mergerfs.srcmounts')
+    srcmounts = lgetxattr(ctrlfile,'user.mergerfs.srcmounts')
     srcmounts = srcmounts.decode().split(':')
     return srcmounts
 
