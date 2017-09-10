@@ -28,9 +28,9 @@ _lgetxattr = _libc.lgetxattr
 _lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
 def lgetxattr(path,name):
     if type(path) == str:
-        path = path.encode('utf8')
+        path = path.encode('utf-8','surrogateescape')
     if type(name) == str:
-        name = name.encode('utf8')
+        name = name.encode('utf-8','surrogateescape')
     length = 64
     while True:
         buf = ctypes.create_string_buffer(length)
