@@ -15,16 +15,41 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import argparse
+import ctypes
 import errno
 import fnmatch
+import hashlib
 import os
 import sys
-import hashlib
+
+
+_libc = ctypes.CDLL("libc.so.6",use_errno=True)
+_lgetxattr = _libc.lgetxattr
+_lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
+def lgetxattr(path,name):
+    if type(path) == str:
+        path = path.encode('utf-8','surrogateescape')
+    if type(name) == str:
+        name = name.encode('utf-8','surrogateescape')
+    length = 64
+    while True:
+        buf = ctypes.create_string_buffer(length)
+        res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
+        if res >= 0:
+            return buf.raw[0:res]
+        else:
+            err = ctypes.get_errno()
+            if err == errno.ERANGE:
+                length *= 2
+            elif err == errno.ENODATA:
+                return None
+            else:
+                raise IOError(err,os.strerror(err),path)
 
 
 def ismergerfs(path):
     try:
-        os.getxattr(path,"user.mergerfs.fullpath")
+        lgetxattr(path,b'user.mergerfs.fullpath')
         return True
     except IOError as e:
         return False
@@ -175,8 +200,10 @@ def getdedupfun(name):
 
 def getxattr(path,key):
     try:
-        attr = os.getxattr(path,key)
-        return attr.decode('utf8')
+        attr = lgetxattr(path,key)
+        if attr:
+            return attr.decode('utf-8')
+        return ''
     except IOError as e:
         if e.errno == errno.ENODATA:
             return ''
@@ -195,7 +222,7 @@ def match(filename,matches):
 
 
 def dedup(fullpath,verbose,ignore,execute,dedupfun):
-    paths = getxattr(fullpath,"user.mergerfs.allpaths").split('\0')
+    paths = getxattr(fullpath,b'user.mergerfs.allpaths').split('\0')
     if len(paths) <= 1:
         return 0
 
@@ -263,7 +290,7 @@ def main():
     args = parser.parse_args()
 
     dedupfun = getdedupfun(args.dedup)
-    if args.dedup == 'manual' and args.verbose == 0:
+    if args.dedup == 'manual':
         args.verbose = 2
 
     args.dir = os.path.realpath(args.dir)
@@ -285,8 +312,7 @@ def main():
                 if not match(filename,includes):
                     continue
                 fullpath = os.path.join(dirname,filename)
-                total_size = total_size + \
-                             dedup(fullpath,verbose,ignore,execute,dedupfun)
+                total_size += dedup(fullpath,verbose,ignore,execute,dedupfun)
     except KeyboardInterrupt:
         print("exiting: CTRL-C pressed")
     except IOError as e:
