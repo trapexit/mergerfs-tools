@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+
+# Copyright (c) 2016, Antonio SJ Musumeci <trapexit@spawn.link>
+#
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+import argparse
+import ctypes
+import errno
+import fnmatch
+import os
+import subprocess
+import sys
+
+
+_libc = ctypes.CDLL("libc.so.6",use_errno=True)
+_lgetxattr = _libc.lgetxattr
+_lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
+def lgetxattr(path,name):
+    if type(path) == str:
+        path = path.encode('utf-8','surrogateescape')
+    if type(name) == str:
+        name = name.encode('utf-8','surrogateescape')
+    length = 64
+    while True:
+        buf = ctypes.create_string_buffer(length)
+        res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
+        if res >= 0:
+            return buf.raw[0:res]
+        else:
+            err = ctypes.get_errno()
+            if err == errno.ERANGE:
+                length *= 2
+            elif err == errno.ENODATA:
+                return None
+            else:
+                raise IOError(err,os.strerror(err),path)
+
+
+def ismergerfs(path):
+    try:
+        lgetxattr(path,'user.mergerfs.allpaths')
+        return True
+    except IOError as e:
+        return False
+
+
+def mergerfs_control_file(basedir):
+    if basedir == '/':
+        return None
+    ctrlfile = os.path.join(basedir,'.mergerfs')
+    if os.path.exists(ctrlfile):
+        return ctrlfile
+    basedir = os.path.dirname(basedir)
+    return mergerfs_control_file(basedir)
+
+
+def mergerfs_srcmounts(ctrlfile):
+    srcmounts = lgetxattr(ctrlfile,b'user.mergerfs.srcmounts')
+    srcmounts = srcmounts.split(b':')
+    return srcmounts
+
+
+def match(filename,matches):
+    for match in matches:
+        if fnmatch.fnmatch(filename,match):
+            return True
+    return False
+
+
+def execute(args):
+    return subprocess.call(args)
+
+
+def copy_file(src,dst,relfile):
+    frompath = os.path.join(src+b'/',b'./',relfile)
+    topath   = dst+b'/'
+    args = [b'rsync',
+            b'-alXA',
+            b'--relative',
+            b'--progress',
+            frompath,
+            topath]
+    return execute(args)
+
+
+def sorted_by_freespace(srcmounts):
+    lfsp = []
+    for srcmount in srcmounts:
+        vfs = os.statvfs(srcmount)
+        avail = vfs.f_bavail * vfs.f_frsize
+        total = vfs.f_blocks * vfs.f_frsize
+        per = avail / total
+        lfsp.append((srcmount,per))
+    lfsp = [x for (x,y) in sorted(lfsp, key=lambda x: x[1])]
+    lfsp.reverse()
+    return lfsp
+
+
+def buildargparser():
+    desc = 'Duplicate files & directories across multiple drives in pool'
+    parser = argparse.ArgumentParser(description=desc)
+    parser.add_argument('dir',
+                        type=str,
+                        help='starting directory')
+    parser.add_argument('-c','--count',
+                        dest='count',
+                        type=int,
+                        default=2,
+                        help='number of versions')
+    parser.add_argument('-i','--include',
+                        dest='include',
+                        type=str,
+                        action='append',
+                        default=[],
+                        help='fnmatch compatible file filter (can use multiple times)')
+    parser.add_argument('-e','--exclude',
+                        dest='exclude',
+                        type=str,
+                        action='append',
+                        default=[],
+                        help='fnmatch compatible file filter (can use multiple times)')
+    return parser
+
+
+def main():
+    parser = buildargparser()
+    args = parser.parse_args()
+
+    args.dir = os.path.realpath(args.dir)
+
+    if not ismergerfs(args.dir):
+        print("%s is not a mergerfs mount" % args.dir)
+        sys.exit(1)
+
+    count     = args.count
+    includes  = ['*'] if not args.include else args.include
+    excludes  = args.exclude
+    ctrlfile  = mergerfs_control_file(args.dir)
+    srcmounts = mergerfs_srcmounts(ctrlfile)
+
+    try:
+        for (dirpath,dirnames,filenames) in os.walk(args.dir):
+            for filename in filenames:
+                if match(filename,excludes):
+                    continue
+                if not match(filename,includes):
+                    continue
+                fullpath = os.path.join(dirpath,filename)
+                allpaths = lgetxattr(fullpath,b'user.mergerfs.allpaths')
+                allpaths = allpaths.split(b'\0')
+                if len(allpaths) >= count:
+                    continue
+                basepath = lgetxattr(fullpath,b'user.mergerfs.basepath')
+                relpath  = lgetxattr(fullpath,b'user.mergerfs.relpath')[1:]
+                drives   = sorted_by_freespace(srcmounts)
+                while (len(allpaths) < count) and len(drives):
+                    copy_file(basepath,drives[0],relpath)
+                    del drives[0]
+                    allpaths = lgetxattr(fullpath,b'user.mergerfs.allpaths')
+                    allpaths = allpaths.split(b'\0')
+
+
+    except KeyboardInterrupt:
+        print("exiting: CTRL-C pressed")
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+   main()

@@ -58,6 +58,32 @@ positional arguments:
 $ mergerfs.fsck -v -f manual /path/to/dir
 ```
 
+## mergerfs.dup
+
+Duplicates files & directories across drives in pool.
+
+Copies files to drives with the most free space.
+
+Run as `root`. Requires `rsync` to be installed.
+
+```
+usage: mergerfs.dup [-h] [-c COUNT] [-i INCLUDE] [-e EXCLUDE] dir
+
+Duplicate files & directories across multiple drives in pool
+
+positional arguments:
+  dir                   starting directory
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -c COUNT, --count COUNT
+                        number of versions
+  -i INCLUDE, --include INCLUDE
+                        fnmatch compatible file filter (can use multiple times)
+  -e EXCLUDE, --exclude EXCLUDE
+                        fnmatch compatible file filter (can use multiple times)
+```
+
 
 ## mergerfs.dedup
 
@@ -99,9 +125,9 @@ Total savings: 38.0GB
 
 ## mergerfs.balance
 
-Will move files from the most filled drive (percentage wise) to the least filled drive. Will do so till the most and least filled drives come within a user defined percentage range (defaults to 10.0).
+Will move files from the most filled drive (percentage wise) to the least filled drive. Will do so till the most and least filled drives come within a user defined percentage range (defaults to 2%).
 
-Please run as `root`.
+Run as `root`. Requires `rsync` to be installed.
 
 ```
 # mergerfs.balance --help
