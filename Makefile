@@ -29,6 +29,7 @@ INSTALLMAN1DIR = $(DESTDIR)$(MAN1DIR)
 
 APPS = mergerfs.fsck \
        mergerfs.mktrash \
+       mergerfs.dup \
        mergerfs.dedup \
        mergerfs.ctl \
        mergerfs.balance
