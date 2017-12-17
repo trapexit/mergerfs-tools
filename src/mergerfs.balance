@@ -56,7 +56,12 @@ def ismergerfs(path):
 
 
 def mergerfs_control_file(basedir):
-    return os.path.join(basedir,'.mergerfs')
+    ctrlfile = os.path.join(basedir,'.mergerfs')
+    if os.path.exists(ctrlfile):
+        return ctrlfile
+    else:
+        dirname = os.path.dirname(basedir)
+        return mergerfs_control_file(dirname)
 
 
 def mergerfs_srcmounts(ctrlfile):
@@ -72,16 +77,38 @@ def match(filename,matches):
     return False
 
 
-def find_a_file(src,includes,excludes):
-    for (dirpath,dirnames,filenames) in os.walk(src):
+def exclude_by_size(filepath,exclude_lt,exclude_gt):
+    try:
+        st = os.lstat(filepath)
+        if exclude_lt and st.st_size < exclude_lt:
+            return True
+        if exclude_gt and st.st_size > exclude_gt:
+            return True
+        return False
+    except:
+        return False
+
+
+def find_a_file(src,
+                relpath,
+                file_includes,file_excludes,
+                path_includes,path_excludes,
+                exclude_lt,exclude_gt):
+    basepath = os.path.join(src,relpath)
+    for (dirpath,dirnames,filenames) in os.walk(basepath):
         for filename in filenames:
-            if match(filename,excludes):
+            filepath = os.path.join(dirpath,filename)
+            if match(filename,file_excludes):
                 continue
-            if not match(filename,includes):
+            if match(filepath,path_excludes):
                 continue
-            relfile = os.path.join(dirpath,filename)
-            relfile = relfile[len(src)+1:]
-            return relfile
+            if not match(filename,file_includes):
+                continue
+            if not match(filepath,path_includes):
+                continue
+            if exclude_by_size(filepath,exclude_lt,exclude_gt):
+                continue
+            return os.path.relpath(filepath,src)
     return None
 
 
@@ -119,6 +146,22 @@ def all_within_range(l,n):
     return (abs(l[0][1] - l[-1][1]) <= n)
 
 
+def human_to_bytes(s):
+    m = s[-1]
+    if   m == 'K':
+        i = int(s[0:-1]) * 1024
+    elif m == 'M':
+        i = int(s[0:-1]) * 1024 * 1024
+    elif m == 'G':
+        i = int(s[0:-1]) * 1024 * 1024 * 1024
+    elif m == 'T':
+        i = int(s[0:-1]) * 1024 * 1024 * 1024 * 1024
+    else:
+        i = int(s)
+
+    return i
+
+
 def buildargparser():
     parser = argparse.ArgumentParser(description='balance files on a mergerfs mount based on percentage drive filled')
     parser.add_argument('dir',
@@ -141,6 +184,28 @@ def buildargparser():
                         action='append',
                         default=[],
                         help='fnmatch compatible file filter (can use multiple times)')
+    parser.add_argument('-I','--include-path',
+                        dest='includepath',
+                        type=str,
+                        action='append',
+                        default=[],
+                        help='fnmatch compatible path filter (can use multiple times)')
+    parser.add_argument('-E','--exclude-path',
+                        dest='excludepath',
+                        type=str,
+                        action='append',
+                        default=[],
+                        help='fnmatch compatible path filter (can use multiple times)')
+    parser.add_argument('-s',
+                        dest='excludelt',
+                        type=str,
+                        default='0',
+                        help='exclude files smaller than <int>[KMGT] bytes')
+    parser.add_argument('-S',
+                        dest='excludegt',
+                        type=str,
+                        default='0',
+                        help='exclude files larger than <int>[KMGT] bytes')
     return parser
 
 
@@ -155,19 +220,41 @@ def main():
         print("%s is not a mergerfs mount" % args.dir)
         sys.exit(1)
 
-    includes  = ['*'] if not args.include else args.include
-    excludes  = args.exclude
-    srcmounts = mergerfs_srcmounts(ctrlfile)
+    relpath = ''
+    mntpoint = os.path.dirname(ctrlfile)
+    if args.dir != mntpoint:
+        relpath = os.path.relpath(args.dir,mntpoint)
 
-    percentage = args.percentage / 100
+    file_includes = ['*'] if not args.include else args.include
+    file_excludes = args.exclude
+    path_includes = ['*'] if not args.includepath else args.includepath
+    path_excludes = args.excludepath
+    exclude_lt    = human_to_bytes(args.excludelt)
+    exclude_gt    = human_to_bytes(args.excludegt)
+    srcmounts     = mergerfs_srcmounts(ctrlfile)
+    percentage    = args.percentage / 100
+
+    seen = set()
     try:
         l = freespace_percentage(srcmounts)
         while not all_within_range(l,percentage):
-            fromdrive   = l[0][0]
             todrive     = l[-1][0]
-            relfilepath = find_a_file(fromdrive,includes,excludes)
-            if not relfilepath:
+            relfilepath = None
+            while not relfilepath:
+                fromdrive = l[0][0]
+                del l[0]
+                relfilepath = find_a_file(fromdrive,
+                                          relpath,
+                                          file_includes,file_excludes,
+                                          path_includes,path_excludes,
+                                          exclude_lt,exclude_gt)
+
+            if fromdrive == todrive:
                 break
+            if relfilepath in seen:
+                break;
+            seen.add(relfilepath)
+            print('from: {}\nto:   {}'.format(fromdrive,todrive))
             rv = move_file(fromdrive,todrive,relfilepath)
             if rv:
                 break;
