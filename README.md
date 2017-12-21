@@ -1,7 +1,13 @@
 # mergerfs-tools
-Optional tools to help manage data in a mergerfs pool
 
-## mergerfs.ctl
+Optional tools to help manage data in a mergerfs pool.
+
+## INSTALL
+
+All of these suplimental tools are self contained Python3 apps. Make sure you have Python 3 installed and either run `make install` or copy the file to `/usr/local/bin` or wherever you keep your binarys and make it executable (chmod +x).
+
+## TOOLS
+### mergerfs.ctl
 
 A wrapper around the mergerfs xattr interface.
 
@@ -34,7 +40,7 @@ $ mergerfs.ctl info
     - /mnt/drive2
 ```
 
-## mergerfs.fsck
+### mergerfs.fsck
 
 Audits permissions and ownership of files and directories in a mergerfs mount and allows for manual and automatic fixing of them.
 
@@ -58,7 +64,7 @@ positional arguments:
 $ mergerfs.fsck -v -f manual /path/to/dir
 ```
 
-## mergerfs.dup
+### mergerfs.dup
 
 Duplicates files & directories across drives in pool.
 
@@ -85,7 +91,7 @@ optional arguments:
 ```
 
 
-## mergerfs.dedup
+### mergerfs.dedup
 
 Finds and deduplicate files.
 
@@ -123,15 +129,17 @@ Total savings: 38.0GB
 ```
 
 
-## mergerfs.balance
+### mergerfs.balance
 
 Will move files from the most filled drive (percentage wise) to the least filled drive. Will do so till the most and least filled drives come within a user defined percentage range (defaults to 2%).
 
 Run as `root`. Requires `rsync` to be installed.
 
 ```
-# mergerfs.balance --help
-usage: mergerfs.balance [-h] [-p PERCENTAGE] [-i INCLUDE] [-e EXCLUDE] dir
+usage: mergerfs.balance [-h] [-p PERCENTAGE] [-i INCLUDE] [-e EXCLUDE]
+                        [-I INCLUDEPATH] [-E EXCLUDEPATH] [-s EXCLUDELT]
+                        [-S EXCLUDEGT]
+                        dir
 
 balance files on a mergerfs mount based on percentage drive filled
 
@@ -147,17 +155,47 @@ optional arguments:
   -e EXCLUDE, --exclude EXCLUDE
                         fnmatch compatible file filter (can use multiple
                         times)
+  -I INCLUDEPATH, --include-path INCLUDEPATH
+                        fnmatch compatible path filter (can use multiple
+                        times)
+  -E EXCLUDEPATH, --exclude-path EXCLUDEPATH
+                        fnmatch compatible path filter (can use multiple
+                        times)
+  -s EXCLUDELT          exclude files smaller than <int>[KMGT] bytes
+  -S EXCLUDEGT          exclude files larger than <int>[KMGT] bytes
 
 # mergerfs.balance /media
-src: /mnt/drive1/foo/bar
-dst: /mnt/drive2/foo/bar
-...
+from: /mnt/drive1/foo/bar
+to:   /mnt/drive2/foo/bar
+rsync ...
 ```
 
-## mergerfs.mktrash
+### mergerfs.mktrash
 
-Will create [FreeDesktop.org Trash specification](https://specifications.freedesktop.org/trash-spec/trashspec-1.0.html) compatible directories on a mergerfs mount. Helps minimize issues with apps which `rename` into the trash directory.
+Will create [FreeDesktop.org Trash specification](https://specifications.freedesktop.org/trash-spec/trashspec-1.0.html) compatible directories on a mergerfs mount. Helps minimize issues with apps which `rename` into the trash directory. This shouldn't be necessary if you're not using a path perservation policy.
 
 ```
 $ mergerfs.mktrash /mountpoint
 ```
+
+## SUPPORT
+
+#### Contact / Issue submission
+* github.com: https://github.com/trapexit/mergerfs-tools/issues
+* email: trapexit@spawn.link
+* twitter: https://twitter.com/_trapexit
+
+#### Support development
+* Bitcoin (BTC): 12CdMhEPQVmjz3SSynkAEuD5q9JmhTDCZA
+* Bitcoin Cash (BCH): 1AjPqZZhu7GVEs6JFPjHmtsvmDL4euzMzp
+* Ethereum (ETH): 0x09A166B11fCC127324C7fc5f1B572255b3046E94
+* Litecoin (LTC): LXAsq6yc6zYU3EbcqyWtHBrH1Ypx4GjUjm
+* PayPal: trapexit@spawn.link
+* Patreon: https://www.patreon.com/trapexit
+
+## LINKS
+
+* http://github.com/trapexit/mergerfs
+* http://github.com/trapexit/mergerfs-tools
+* http://github.com/trapexit/scorch
+* http://github.com/trapexit/backup-and-recovery-howtos
