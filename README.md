@@ -66,11 +66,12 @@ $ mergerfs.fsck -v -f manual /path/to/dir
 
 ### mergerfs.dup
 
-Duplicates files & directories across drives in pool.
-
-Copies files to drives with the most free space.
+Duplicates files & directories across drives in pool copying files to drives with the most free space.
 
 Run as `root`. Requires `rsync` to be installed.
+
+**Important Warning:** This tool is meant to only be used in archival data that never changes. Any change to a file that's been duplicate will not be replicated in it's copy even though mergerfs will update it's modified timestamp. This means you'll have two versions of the file and the one visable in the mergerfs pool can change on remount, aditionaly using mergerfs.dedup may cause loss of data since it will the first file it sees instead of the oldest has it only checks for timestamp and not content.
+
 
 ```
 usage: mergerfs.dup [-h] [-c COUNT] [-i INCLUDE] [-e EXCLUDE] dir
@@ -94,6 +95,8 @@ optional arguments:
 ### mergerfs.dedup
 
 Finds and deduplicate files.
+
+**Important Warning:** This tool only compares timestamps and not file content. Updating a duplicate file in a mergerfs pool will change the content of a single file but the timestamp of all copies. Running dedupping in such conditions may cause dataloss.
 
 ```
 # mergerfs.dedup -h
