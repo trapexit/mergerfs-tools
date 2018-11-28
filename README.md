@@ -96,7 +96,7 @@ optional arguments:
 
 Finds and deduplicate files.
 
-**Important Warning:** This tool only compares timestamps and not file content. Updating a duplicate file in a mergerfs pool will change the content of a single file but the timestamp of all copies. Running dedupping in such conditions may cause dataloss.
+**Important Warning:** This tool will only compare the property specified in the deduping method. Updating a duplicate file in a mergerfs pool will change the content of a single file but the timestamp of all copies. Running deduping with newest method under those conditions may cause data loss has the file removed will be "random".
 
 ```
 # mergerfs.dedup -h
