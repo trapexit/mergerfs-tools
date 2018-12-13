@@ -20,6 +20,7 @@ import errno
 import fnmatch
 import hashlib
 import os
+import shlex
 import sys
 
 
@@ -91,36 +92,17 @@ def stat_files(paths):
 def remove(files,execute,verbose):
     for (path,stat) in files:
         try:
+            print('rm -vf',shlex.quote(path))
             if execute:
                 os.remove(path)
-                if verbose:
-                    print("removed {0}".format(path))
-            elif verbose:
-                print("would remove {0}".format(path))
         except Exception as e:
             print("%s" % e)
 
 
-def size_equal(stats):
-    base = stats[0]
-    for stat in stats:
-        if stat[1].st_size != base[1].st_size:
-            return False
-    return True
-
-
-def md5sums_equal(paths):
-    hashvalue = hash_file(paths[0])
-    for path in paths[1:]:
-        if(hash_file(path) != hashvalue):
-            return False
-    return True
-
-
 def print_stats(stats):
     for i in range(0,len(stats)):
-        print("  %i: %s" % (i+1,stats[i][0]))
-        data = ("   - uid: {0:5}; gid: {1:5}; mode: {2:6o}; "
+        print("#  %i: %s" % (i+1,stats[i][0]))
+        data = ("#   - uid: {0:5}; gid: {1:5}; mode: {2:6o}; "
                 "size: {3}; mtime: {4}").format(
             stats[i][1].st_uid,
             stats[i][1].st_gid,
@@ -137,14 +119,10 @@ def total_size(stats):
     return total
 
 
-def noop_dedup(stats):
-    stats.pop()
-
-
 def manual_dedup(stats):
     done = False
     while not done:
-        value = input("Which to keep? ('s' to skip):")
+        value = input("# Which to keep? ('s' to skip):")
 
         if value.lower() == 's':
             stats.clear()
@@ -163,39 +141,124 @@ def manual_dedup(stats):
             print("Input error: enter a value [1-{0}] or skip by entering 's'".format(len(stats)))
 
 
+def mtime_all(stats):
+    mtime = stats[0][1].st_mtime
+    return all(x[1].st_mtime == mtime for x in stats)
+
+
+def size_all(stats):
+    size = stats[0][1].st_size
+    return all(x[1].st_size == size for x in stats)
+
+
+def md5sums_all(stats):
+    if size_all(stats):
+        hashval = hash_file(stats[0][0])
+        return all(hash_file(path) == hashval for (path,st) in stats[1:])
+    return False
+
+
+def oldest_dedup(stats):
+    if mtime_all(stats):
+        drive_with_most_space_dedup(stats)
+        return
+
+    stats.sort(key=lambda st: st[1].st_mtime)
+    oldest = stats[0]
+    stats.remove(oldest)
+
+
+def strict_oldest_dedup(stats):
+    if mtime_all(stats):
+        stats.clear()
+        return
+
+    return oldest_dedup(stats)
+
+
 def newest_dedup(stats):
-    stats.sort(key=lambda stat: stat[1].st_mtime)
-    newest = stats[-1]
+    if mtime_all(stats):
+        drive_with_most_space_dedup(stats)
+        return
+
+    stats.sort(key=lambda st: st[1].st_mtime,reverse=True)
+    newest = stats[0]
     stats.remove(newest)
 
 
+def strict_newest_dedup(stats):
+    if mtime_all(stats):
+        stats.clear()
+        return
+
+    return newest_dedup(stats)
+
+
 def largest_dedup(stats):
-    stats.sort(key=lambda stat: stat[1].st_size)
-    largest = stats[-1]
+    if size_all(stats):
+        drive_with_most_space_dedup(stats)
+        return
+
+    stats.sort(key=lambda st: st[1].st_size,reverse=True)
+    largest = stats[0]
     stats.remove(largest)
 
 
-def sort_space_free(stat):
+def strict_largest_dedup(stats):
+    if size_all(stats):
+        stats.clear()
+        return
+
+    return largest_dedup(stats)
+
+
+def smallest_dedup(stats):
+    if size_all(stats):
+        drive_with_most_space_dedup(stats)
+        return
+
+    stats.sort(key=lambda st: st[1].st_size)
+    smallest = stats[0]
+    stats.remove(smallest)
+
+
+def strict_smallest_dedup(stats):
+    if size_all(stats):
+        stats.clear()
+        return
+
+    return smallest_dedup(stats)
+
+
+def calc_space_free(stat):
     st = os.statvfs(stat[0])
     return st.f_frsize * st.f_bfree
 
 
 def drive_with_most_space_dedup(stats):
-    stats.sort(key=sort_space_free)
-    largest = stats[-1]
+    stats.sort(key=calc_space_free,reverse=True)
+    largest = stats[0]
     stats.remove(largest)
 
 
-def getdedupfun(name):
-    if name == 'manual':
-        return manual_dedup
-    elif name == 'newest':
-        return newest_dedup
-    elif name == 'largest':
-        return largest_dedup
-    elif name == 'mostfreespace':
-        return drive_with_most_space_dedup
-    return noop_dedup
+def getdedupfun(name,strict):
+    if strict:
+        name = 'strict-' + name
+    funs = {
+        'manual': manual_dedup,
+        'strict-manual': manual_dedup,
+        'mostfreespace': drive_with_most_space_dedup,
+        'strict-mostfreespace': drive_with_most_space_dedup,
+        'newest': newest_dedup,
+        'strict-newest': strict_newest_dedup,
+        'oldest': oldest_dedup,
+        'strict-oldest': strict_oldest_dedup,
+        'largest': largest_dedup,
+        'strict-largest': strict_largest_dedup,
+        'smallest': smallest_dedup,
+        'strict-smallest': strict_smallest_dedup
+    }
+    return funs[name]
 
 
 def getxattr(path,key):
@@ -227,23 +290,41 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
         return 0
 
     stats = stat_files(paths)
-    if ((ignore == 1) and size_equal(stats)):
-        if verbose:
-            print('ignored:',fullpath)
-        return 0
-    if ((ignore >= 2) and md5sums_equal(paths)):
-        if verbose:
-            print('ignored:',fullpath)
+    if (((ignore == 'same-time')      and     mtime_all(stats))   or
+        ((ignore == 'different-time') and not mtime_all(stats))   or
+        ((ignore == 'same-size')      and     size_all(stats))    or
+        ((ignore == 'different-size') and not size_all(stats))    or
+        ((ignore == 'same-hash')      and     md5sums_all(stats)) or
+        ((ignore == 'different-hash') and not md5sums_all(stats))):
+        if verbose >= 2:
+            print('# ignored:',fullpath)
         return 0
 
-    if verbose:
-        print(fullpath)
-    if verbose >= 2:
+    if (dedupfun == manual_dedup):
+        print('#',fullpath)
         print_stats(stats)
 
     try:
         dedupfun(stats)
-        remove(stats,execute,verbose)
+        if not stats:
+            if verbose >= 2:
+                print('# skipped:',fullpath)
+            return 0
+
+        if (dedupfun != manual_dedup):
+            if verbose >= 2:
+                print('#',fullpath)
+            if verbose >= 3:
+                print_stats(stats)
+
+        for (path,stat) in stats:
+            try:
+                if verbose:
+                    print('rm -vf',shlex.quote(path))
+                if execute:
+                    os.remove(path)
+            except Exception as e:
+                print('#',e)
 
         return total_size(stats)
 
@@ -253,45 +334,97 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
     return 0
 
 
+def print_help():
+    help = \
+'''
+usage: mergerfs.dedup [<options>] <dir>
+
+Remove duplicate files across branches of a mergerfs pool. Provides
+multiple algos for determining which file to keep and what to skip.
+
+positional arguments:
+  dir                    Starting directory
+
+optional arguments:
+  -v, --verbose          Once to print `rm` commands
+                         Twice for status info
+                         Three for file info
+  -i, --ignore=          Ignore files if... (default: none)
+                         * same-size      : have the same size
+                         * different-size : have different sizes
+                         * same-time      : have the same mtime
+                         * different-time : have different mtimes
+                         * same-hash      : have the same md5sum
+                         * different-hash : have different md5sums
+  -d, --dedup=           What file to *keep* (default: newest)
+                         * manual        : ask user
+                         * oldest        : file with smallest mtime
+                         * newest        : file with largest mtime
+                         * largest       : file with largest size
+                         * smallest      : file with smallest size
+                         * mostfreespace : file on drive with most free space
+  -s, --strict           Skip dedup if all files have same value.
+                         Only applies to oldest, newest, largest, smallest.
+  -e, --execute          Will not perform file removal without this.
+  -I, --include=         fnmatch compatible filter to include files.
+                         Can be used multiple times.
+  -E, --exclude=         fnmatch compatible filter to exclude files.
+                         Can be used multiple times.
+
+'''
+    print(help)
+
+
 def buildargparser():
-    parser = argparse.ArgumentParser(description='dedup files on a mergerfs mount')
+    desc = 'dedup files across branches in a mergerfs pool'
+    usage = 'mergerfs.dedup [<options>] <dir>'
+    parser = argparse.ArgumentParser(add_help=False)
+
     parser.add_argument('dir',
                         type=str,
+                        nargs='?',
+                        default=None,
                         help='starting directory')
     parser.add_argument('-v','--verbose',
                         action='count',
-                        default=0,
-                        help='print additional information: use once for duped files, twice for file info')
+                        default=0)
     parser.add_argument('-i','--ignore',
-                        action='count',
-                        default=0,
-                        help='use once to ignore duped files of the same size, twice to ignore files with matching md5sums')
+                        choices=['same-size','different-size',
+                                 'same-time','different-time',
+                                 'same-hash','different-hash'])
     parser.add_argument('-d','--dedup',
-                        choices=['manual','newest','largest','mostfreespace'],
-                        help='dedup policy: what file to keep')
+                        choices=['manual',
+                                 'oldest','newest',
+                                 'smallest','largest',
+                                 'mostfreespace'],
+                        default='newest')
+    parser.add_argument('-s','--strict',
+                        action='store_true')
     parser.add_argument('-e','--execute',
-                        action='store_true',
-                        help='without this it will dryrun')
+                        action='store_true')
     parser.add_argument('-I','--include',
                         type=str,
                         action='append',
-                        default=[],
-                        help='fnmatch compatible filter (can use multiple times')
+                        default=[])
     parser.add_argument('-E','--exclude',
                         type=str,
                         action='append',
-                        default=[],
-                        help='fnmatch compatible filter (can use multiple times')
+                        default=[])
+    parser.add_argument('-h','--help',
+                        action='store_true')
+
     return parser
 
 
 def main():
-    parser = buildargparser()
-    args = parser.parse_args()
+    parser   = buildargparser()
+    args     = parser.parse_args()
 
-    dedupfun = getdedupfun(args.dedup)
-    if args.dedup == 'manual':
-        args.verbose = 2
+    if args.help or not args.dir:
+        print_help()
+        sys.exit(0)
+
+    dedupfun = getdedupfun(args.dedup,args.strict)
 
     args.dir = os.path.realpath(args.dir)
     if not ismergerfs(args.dir):
@@ -311,15 +444,15 @@ def main():
                     continue
                 if not match(filename,includes):
                     continue
-                fullpath = os.path.join(dirname,filename)
+                fullpath    = os.path.join(dirname,filename)
                 total_size += dedup(fullpath,verbose,ignore,execute,dedupfun)
     except KeyboardInterrupt:
-        print("exiting: CTRL-C pressed")
+        print("# exiting: CTRL-C pressed")
     except IOError as e:
         if e.errno == errno.EPIPE:
             pass
 
-    print("Total savings:",sizeof_fmt(total_size))
+    print('# Total savings:',sizeof_fmt(total_size))
 
     sys.exit(0)
 
