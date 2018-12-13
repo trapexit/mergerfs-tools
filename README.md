@@ -66,28 +66,37 @@ $ mergerfs.fsck -v -f manual /path/to/dir
 
 ### mergerfs.dup
 
-Duplicates files & directories across drives in pool.
+Duplicates files & directories across branches in a pool. The file selected for duplication is picked by the `dup` option. Files will be copied to drives with the most free space. Deleted from others if `prune` is enabled.
 
-Copies files to drives with the most free space.
-
-Run as `root`. Requires `rsync` to be installed.
+See usage for more. Run as `root`. Requires `rsync` to be installed.
 
 ```
-usage: mergerfs.dup [-h] [-c COUNT] [-i INCLUDE] [-e EXCLUDE] dir
+usage: mergerfs.dup [<options>] <dir>
 
-Duplicate files & directories across multiple drives in pool
+Duplicate files & directories across multiple drives in a pool.
+Will print out commands for inspection and out of band use.
 
 positional arguments:
-  dir                   starting directory
+  dir                    starting directory
 
 optional arguments:
-  -h, --help            show this help message and exit
-  -c COUNT, --count COUNT
-                        number of versions
-  -i INCLUDE, --include INCLUDE
-                        fnmatch compatible file filter (can use multiple times)
-  -e EXCLUDE, --exclude EXCLUDE
-                        fnmatch compatible file filter (can use multiple times)
+  -c, --count=           Number of files to duplicate. (default: 2)
+  -d, --dup=             Which file (if more than one exists) to choose to
+                         duplicate. Each one falls back to `mergerfs` if
+                         all files have the same value. (default: newest)
+                         * newest   : file with largest mtime
+                         * oldest   : file with smallest mtime
+                         * smallest : file with smallest size
+                         * largest  : file with largest size
+                         * mergerfs : file chosen by mergerfs' getattr
+  -p, --prune            Remove files above `count`. Without this enabled
+                         it will update all existing files.
+  -e, --execute          Execute `rsync` and `rm` commands. Not just
+                         print them.
+  -I, --include=         fnmatch compatible filter to include files.
+                         Can be used multiple times.
+  -E, --exclude=         fnmatch compatible filter to exclude files.
+                         Can be used multiple times.
 ```
 
 

@@ -20,6 +20,7 @@ import errno
 import fnmatch
 import os
 import subprocess
+import shlex
 import sys
 
 
@@ -65,10 +66,10 @@ def mergerfs_control_file(basedir):
     return mergerfs_control_file(basedir)
 
 
-def mergerfs_srcmounts(ctrlfile):
-    srcmounts = lgetxattr(ctrlfile,b'user.mergerfs.srcmounts')
-    srcmounts = srcmounts.split(b':')
-    return srcmounts
+def mergerfs_branches(ctrlfile):
+    branches = lgetxattr(ctrlfile,b'user.mergerfs.srcmounts')
+    branches = branches.split(b':')
+    return branches
 
 
 def match(filename,matches):
@@ -78,64 +79,187 @@ def match(filename,matches):
     return False
 
 
-def execute(args):
+def execute_cmd(args):
     return subprocess.call(args)
 
 
-def copy_file(src,dst,relfile):
-    frompath = os.path.join(src+b'/',b'./',relfile)
-    topath   = dst+b'/'
-    args = [b'rsync',
-            b'-alXA',
-            b'--relative',
+def print_args(args):
+    quoted = [shlex.quote(arg.decode()) for arg in args]
+    print(' '.join(quoted))
+
+
+def build_copy_file(src,tgt,rel):
+    srcpath = os.path.join(src,b'./',rel)
+    tgtpath = tgt + b'/'
+    return [b'rsync',
+            b'-avHAXWES',
+            b'--numeric-ids',
             b'--progress',
-            frompath,
-            topath]
-    return execute(args)
+            b'--relative',
+            srcpath,
+            tgtpath]
 
 
-def sorted_by_freespace(srcmounts):
-    lfsp = []
-    for srcmount in srcmounts:
-        vfs = os.statvfs(srcmount)
-        avail = vfs.f_bavail * vfs.f_frsize
-        total = vfs.f_blocks * vfs.f_frsize
-        per = avail / total
-        lfsp.append((srcmount,per))
-    lfsp = [x for (x,y) in sorted(lfsp, key=lambda x: x[1])]
-    lfsp.reverse()
-    return lfsp
+def build_branches_freespace(branches):
+    rv = dict()
+    for branch in branches:
+        st = os.statvfs(branch)
+        rv[branch] = st.f_bavail * st.f_frsize
+    return rv
+
+
+def print_help():
+    help = \
+'''
+usage: mergerfs.dup [<options>] <dir>
+
+Duplicate files & directories across multiple drives in a pool.
+Will print out commands for inspection and out of band use.
+
+positional arguments:
+  dir                    starting directory
+
+optional arguments:
+  -c, --count=           Number of files to duplicate. (default: 2)
+  -d, --dup=             Which file (if more than one exists) to choose to
+                         duplicate. Each one falls back to `mergerfs` if
+                         all files have the same value. (default: newest)
+                         * newest   : file with largest mtime
+                         * oldest   : file with smallest mtime
+                         * smallest : file with smallest size
+                         * largest  : file with largest size
+                         * mergerfs : file chosen by mergerfs' getattr
+  -p, --prune            Remove files above `count`. Without this enabled
+                         it will update all existing files.
+  -e, --execute          Execute `rsync` and `rm` commands. Not just
+                         print them.
+  -I, --include=         fnmatch compatible filter to include files.
+                         Can be used multiple times.
+  -E, --exclude=         fnmatch compatible filter to exclude files.
+                         Can be used multiple times.
+'''
+    print(help)
 
 
 def buildargparser():
-    desc = 'Duplicate files & directories across multiple drives in pool'
-    parser = argparse.ArgumentParser(description=desc)
+    parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('dir',
                         type=str,
-                        help='starting directory')
+                        nargs='?',
+                        default=None)
     parser.add_argument('-c','--count',
                         dest='count',
                         type=int,
-                        default=2,
-                        help='number of versions')
-    parser.add_argument('-i','--include',
+                        default=2)
+    parser.add_argument('-p','--prune',
+                        dest='prune',
+                        action='store_true')
+    parser.add_argument('-d','--dup',
+                        choices=['newest','oldest',
+                                 'smallest','largest',
+                                 'mergerfs'],
+                        default='newest')
+    parser.add_argument('-e','--execute',
+                        dest='execute',
+                        action='store_true')
+    parser.add_argument('-I','--include',
                         dest='include',
                         type=str,
                         action='append',
-                        default=[],
-                        help='fnmatch compatible file filter (can use multiple times)')
-    parser.add_argument('-e','--exclude',
+                        default=[])
+    parser.add_argument('-E','--exclude',
                         dest='exclude',
                         type=str,
                         action='append',
-                        default=[],
-                        help='fnmatch compatible file filter (can use multiple times)')
+                        default=[])
+    parser.add_argument('-h','--help',
+                        action='store_true')
+
     return parser
+
+
+def mergerfs_all_basepaths(fullpath,relpath):
+    rv = lgetxattr(fullpath,b'user.mergerfs.allpaths')
+    rv = rv.split(b'\0')
+    return [x[:-len(relpath)].rstrip(b'/') for x in rv]
+
+
+def mergerfs_basepath(fullpath):
+    return lgetxattr(fullpath,b'user.mergerfs.basepath')
+
+
+def mergerfs_relpath(fullpath):
+    return lgetxattr(fullpath,b'user.mergerfs.relpath').lstrip(b'/')
+
+
+def newest_dupfun(default_basepath,relpath,basepaths):
+    sts = dict([(f,os.lstat(os.path.join(f,relpath))) for f in basepaths])
+
+    mtime = sts[basepaths[0]].st_mtime
+    if not all([st.st_mtime == mtime for st in sts.values()]):
+        return sorted(sts,key=lambda x: sts.get(x).st_mtime,reverse=True)[0]
+
+    ctime = sts[basepaths[0]].st_ctime
+    if not all([st.st_ctime == ctime for st in sts.values()]):
+        return sorted(sts,key=lambda x: sts.get(x).st_ctime,reverse=True)[0]
+
+    return default_basepath
+
+
+def oldest_dupfun(default_basepath,relpath,basepaths):
+    sts = dict([(f,os.lstat(os.path.join(f,relpath))) for f in basepaths])
+
+    mtime = sts[basepaths[0]].st_mtime
+    if not all([st.st_mtime == mtime for st in sts.values()]):
+        return sorted(sts,key=lambda x: sts.get(x).st_mtime,reverse=False)[0]
+
+    ctime = sts[basepaths[0]].st_ctime
+    if not all([st.st_ctime == ctime for st in sts.values()]):
+        return sorted(sts,key=lambda x: sts.get(x).st_ctime,reverse=False)[0]
+
+    return default_basepath
+
+
+def largest_dupfun(default_basepath,relpath,basepaths):
+    sts = dict([(f,os.lstat(os.path.join(f,relpath))) for f in basepaths])
+
+    size = sts[basepaths[0]].st_size
+    if not all([st.st_size == size for st in sts.values()]):
+        return sorted(sts,key=lambda x: sts.get(x).st_size,reverse=True)[0]
+
+    return default_basepath
+
+
+def smallest_dupfun(default_basepath,relpath,basepaths):
+    sts = dict([(f,os.lstat(os.path.join(f,relpath))) for f in basepaths])
+
+    size = sts[basepaths[0]].st_size
+    if not all([st.st_size == size for st in sts.values()]):
+        return sorted(sts,key=lambda x: sts.get(x).st_size,reverse=False)[0]
+
+    return default_basepath
+
+
+def mergerfs_dupfun(default_basepath,relpath,basepaths):
+    return default_basepath
+
+
+def getdupfun(name):
+    funs = {'newest': newest_dupfun,
+            'oldest': oldest_dupfun,
+            'smallest': smallest_dupfun,
+            'largest': largest_dupfun,
+            'mergerfs': mergerfs_dupfun}
+    return funs[name]
 
 
 def main():
     parser = buildargparser()
     args = parser.parse_args()
+
+    if args.help or not args.dir:
+        print_help()
+        sys.exit(0)
 
     args.dir = os.path.realpath(args.dir)
 
@@ -143,11 +267,15 @@ def main():
         print("%s is not a mergerfs mount" % args.dir)
         sys.exit(1)
 
-    count     = args.count
+    prune     = args.prune
+    execute   = args.execute
     includes  = ['*'] if not args.include else args.include
     excludes  = args.exclude
+    dupfun    = getdupfun(args.dup)
     ctrlfile  = mergerfs_control_file(args.dir)
-    srcmounts = mergerfs_srcmounts(ctrlfile)
+    branches  = mergerfs_branches(ctrlfile)
+    branches  = build_branches_freespace(branches)
+    count     = min(args.count,len(branches))
 
     try:
         for (dirpath,dirnames,filenames) in os.walk(args.dir):
@@ -156,23 +284,60 @@ def main():
                     continue
                 if not match(filename,includes):
                     continue
+
                 fullpath = os.path.join(dirpath,filename)
-                allpaths = lgetxattr(fullpath,b'user.mergerfs.allpaths')
-                allpaths = allpaths.split(b'\0')
-                if len(allpaths) >= count:
-                    continue
-                basepath = lgetxattr(fullpath,b'user.mergerfs.basepath')
-                relpath  = lgetxattr(fullpath,b'user.mergerfs.relpath')[1:]
-                drives   = sorted_by_freespace(srcmounts)
-                while (len(allpaths) < count) and len(drives):
-                    copy_file(basepath,drives[0],relpath)
-                    del drives[0]
-                    allpaths = lgetxattr(fullpath,b'user.mergerfs.allpaths')
-                    allpaths = allpaths.split(b'\0')
+                basepath = mergerfs_basepath(fullpath)
+                relpath  = mergerfs_relpath(fullpath)
+                existing = mergerfs_all_basepaths(fullpath,relpath)
+
+                srcpath  = dupfun(basepath,relpath,existing)
+                srcfile  = os.path.join(srcpath,relpath)
+                srcfile_size = os.stat(srcfile).st_size
+                existing.remove(srcpath)
+
+                i = 1
+                copies = []
+                for tgtpath in existing:
+                    if prune and i >= count:
+                        break
+                    copies.append(tgtpath)
+                    args = build_copy_file(srcpath,tgtpath,relpath)
+                    print('# overwrite')
+                    print_args(args)
+                    if execute:
+                        execute_cmd(args)
+                    i += 1
+
+                for _ in range(i,count):
+                    for branch in sorted(branches,key=branches.get,reverse=True):
+                        tgtfile = os.path.join(branch,relpath)
+                        if branch in copies or os.path.exists(tgtfile):
+                            continue
+                        copies.append(branch)
+                        branches[branch] -= srcfile_size
+                        args = build_copy_file(srcpath,branch,relpath)
+                        print('# copy')
+                        print_args(args)
+                        if execute:
+                            execute_cmd(args)
+                        break
+
+                if prune:
+                    leftovers = set(existing) - set(copies)
+                    for branch in leftovers:
+                        branches[branch] += srcfile_size
+                        tgtfile = os.path.join(branch,relpath)
+                        print('# remove')
+                        args = [b'rm',b'-vf',tgtfile]
+                        print_args(args)
+                        if execute:
+                            execute_cmd(args)
 
 
     except KeyboardInterrupt:
         print("exiting: CTRL-C pressed")
+    except BrokenPipeError:
+        pass
 
     sys.exit(0)
 
