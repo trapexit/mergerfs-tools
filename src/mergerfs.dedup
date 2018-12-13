@@ -101,22 +101,6 @@ def remove(files,execute,verbose):
             print("%s" % e)
 
 
-def size_equal(stats):
-    base = stats[0]
-    for stat in stats:
-        if stat[1].st_size != base[1].st_size:
-            return False
-    return True
-
-
-def md5sums_equal(paths):
-    hashvalue = hash_file(paths[0])
-    for path in paths[1:]:
-        if(hash_file(path) != hashvalue):
-            return False
-    return True
-
-
 def print_stats(stats):
     for i in range(0,len(stats)):
         print("  %i: %s" % (i+1,stats[i][0]))
@@ -135,10 +119,6 @@ def total_size(stats):
     for (name,stat) in stats:
         total = total + stat.st_size
     return total
-
-
-def noop_dedup(stats):
-    stats.pop()
 
 
 def manual_dedup(stats):
@@ -163,13 +143,36 @@ def manual_dedup(stats):
             print("Input error: enter a value [1-{0}] or skip by entering 's'".format(len(stats)))
 
 
+def mtime_all(stats):
+    mtime = stats[0][1].st_mtime
+    return all(x[1].st_mtime == mtime for x in stats)
+
+
+def size_all(stats):
+    size = stats[0][1].st_size
+    return all(x[1].st_size == size for x in stats)
+
+
+def md5sums_all(paths):
+    hashval = hash_file(paths[0])
+    return all(hash_file(x) == hashval for x in paths[1:])
+
+
 def newest_dedup(stats):
+    if mtime_all(stats):
+        del stats[:]
+        return
+
     stats.sort(key=lambda stat: stat[1].st_mtime)
     newest = stats[-1]
     stats.remove(newest)
 
 
 def largest_dedup(stats):
+    if size_all(stats):
+        del stats[:]
+        return
+
     stats.sort(key=lambda stat: stat[1].st_size)
     largest = stats[-1]
     stats.remove(largest)
@@ -195,7 +198,6 @@ def getdedupfun(name):
         return largest_dedup
     elif name == 'mostfreespace':
         return drive_with_most_space_dedup
-    return noop_dedup
 
 
 def getxattr(path,key):
@@ -227,11 +229,10 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
         return 0
 
     stats = stat_files(paths)
-    if ((ignore == 1) and size_equal(stats)):
-        if verbose:
-            print('ignored:',fullpath)
-        return 0
-    if ((ignore >= 2) and md5sums_equal(paths)):
+    if (((ignore == 'same-size')      and     size_all(stats))    or
+        ((ignore == 'different-size') and not size_all(stats))    or
+        ((ignore == 'same-hash')      and     md5sums_all(paths)) or
+        ((ignore == 'different-hash') and not md5sums_all(paths))):
         if verbose:
             print('ignored:',fullpath)
         return 0
@@ -243,7 +244,10 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
 
     try:
         dedupfun(stats)
-        remove(stats,execute,verbose)
+        if not stats and verbose:
+            print('skipped: ',fullpath)
+        else:
+            remove(stats,execute,verbose)
 
         return total_size(stats)
 
@@ -254,21 +258,21 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
 
 
 def buildargparser():
-    parser = argparse.ArgumentParser(description='dedup files on a mergerfs mount')
+    parser = argparse.ArgumentParser(description='dedup files across branches in a mergerfs pool')
     parser.add_argument('dir',
                         type=str,
                         help='starting directory')
     parser.add_argument('-v','--verbose',
                         action='count',
                         default=0,
-                        help='print additional information: use once for duped files, twice for file info')
+                        help='once to print duped files, twice for file info')
     parser.add_argument('-i','--ignore',
-                        action='count',
-                        default=0,
-                        help='use once to ignore duped files of the same size, twice to ignore files with matching md5sums')
+                        choices=['same-size','different-size','same-hash','different-hash'],
+                        help='ignore files if...')
     parser.add_argument('-d','--dedup',
                         choices=['manual','newest','largest','mostfreespace'],
-                        help='dedup policy: what file to keep')
+                        default='newest',
+                        help='what file to **keep**')
     parser.add_argument('-e','--execute',
                         action='store_true',
                         help='without this it will dryrun')
