@@ -223,7 +223,7 @@ def match(filename,matches):
     return False
 
 
-def dedup(fullpath,verbose,ignore,execute,dedupfun):
+def dedup(fullpath,verbose,noprint,ignore,execute,dedupfun):
     paths = getxattr(fullpath,b'user.mergerfs.allpaths').split('\0')
     if len(paths) <= 1:
         return 0
@@ -233,18 +233,18 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
         ((ignore == 'different-size') and not size_all(stats))    or
         ((ignore == 'same-hash')      and     md5sums_all(paths)) or
         ((ignore == 'different-hash') and not md5sums_all(paths))):
-        if verbose:
+        if verbose and not noprint:
             print('ignored:',fullpath)
         return 0
 
-    if verbose:
+    if verbose and not noprint:
         print(fullpath)
     if verbose >= 2:
         print_stats(stats)
 
     try:
         dedupfun(stats)
-        if not stats and verbose:
+        if not stats and verbose and not noprint:
             print('skipped: ',fullpath)
         else:
             remove(stats,execute,verbose)
@@ -286,6 +286,11 @@ def buildargparser():
                         action='append',
                         default=[],
                         help='fnmatch compatible filter (can use multiple times')
+    parser.add_argument('-S','--no-print-skipped',
+                        action='store_const',
+                        const=1,
+                        default=0,
+                        help='be silent about skipped and ignored files')
     return parser
 
 
@@ -307,6 +312,7 @@ def main():
         verbose  = args.verbose
         ignore   = args.ignore
         execute  = args.execute
+        noprint  = args.no_print_skipped
         includes = ['*'] if not args.include else args.include
         excludes = args.exclude
         for (dirname,dirnames,filenames) in os.walk(args.dir):
@@ -316,7 +322,7 @@ def main():
                 if not match(filename,includes):
                     continue
                 fullpath = os.path.join(dirname,filename)
-                total_size += dedup(fullpath,verbose,ignore,execute,dedupfun)
+                total_size += dedup(fullpath,verbose,noprint,ignore,execute,dedupfun)
     except KeyboardInterrupt:
         print("exiting: CTRL-C pressed")
     except IOError as e:
