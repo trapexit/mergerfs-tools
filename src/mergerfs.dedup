@@ -272,7 +272,7 @@ def buildargparser():
     parser.add_argument('-d','--dedup',
                         choices=['manual','newest','largest','mostfreespace'],
                         default='newest',
-                        help='what file to **keep**')
+                        help='what file to **keep**, default newest')
     parser.add_argument('-e','--execute',
                         action='store_true',
                         help='without this it will dryrun')
