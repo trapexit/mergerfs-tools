@@ -111,6 +111,7 @@ optional arguments:
   -h, --help            show this help message and exit
   -v, --verbose         print additional information: use once for duped
                         files, twice for file info
+                        and to see the files being ignored (-i)
   -i, --ignore          use once to ignore duped files of the same size, twice
                         to ignore files with matching md5sums
   -d {manual,newest,largest,mostfreespace}, --dedup {manual,newest,largest,mostfreespace}
