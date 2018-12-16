@@ -233,7 +233,7 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
         ((ignore == 'different-size') and not size_all(stats))    or
         ((ignore == 'same-hash')      and     md5sums_all(paths)) or
         ((ignore == 'different-hash') and not md5sums_all(paths))):
-        if verbose:
+        if verbose >= 3:
             print('ignored:',fullpath)
         return 0
 
@@ -244,7 +244,7 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
 
     try:
         dedupfun(stats)
-        if not stats and verbose:
+        if not stats and (verbose >= 1):
             print('skipped: ',fullpath)
         else:
             remove(stats,execute,verbose)
@@ -294,7 +294,11 @@ def main():
     args = parser.parse_args()
 
     dedupfun = getdedupfun(args.dedup)
-    if args.dedup == 'manual':
+    # on manual deduping, we need some verbosity, but less than -v -v
+    # so we introduce a virtual verbosity between these
+    if args.verbose > 1:
+        args.verbose += 1
+    if args.dedup == 'manual' and args.verbose < 2:
         args.verbose = 2
 
     args.dir = os.path.realpath(args.dir)
