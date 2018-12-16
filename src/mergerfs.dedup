@@ -167,12 +167,37 @@ def newest_dedup(stats):
     newest = stats[-1]
     stats.remove(newest)
 
+def newest_any_dedup(stats):
+    stats.sort(key=lambda stat: stat[1].st_mtime)
+    newest = stats[-1]
+    stats.remove(newest)
+
+
+def oldest_dedup(stats):
+    if mtime_all(stats):
+        del stats[:]
+        return
+
+    stats.sort(key=lambda stat: -stat[1].st_mtime)
+    oldest = stats[-1]
+    stats.remove(oldest)
+
+def oldest_any_dedup(stats):
+    stats.sort(key=lambda stat: -stat[1].st_mtime)
+    oldest = stats[-1]
+    stats.remove(oldest)
+
 
 def largest_dedup(stats):
     if size_all(stats):
         del stats[:]
         return
 
+    stats.sort(key=lambda stat: stat[1].st_size)
+    largest = stats[-1]
+    stats.remove(largest)
+
+def largest_any_dedup(stats):
     stats.sort(key=lambda stat: stat[1].st_size)
     largest = stats[-1]
     stats.remove(largest)
@@ -194,7 +219,15 @@ def getdedupfun(name):
         return manual_dedup
     elif name == 'newest':
         return newest_dedup
+    elif name == 'newest-any':
+        return newest_any_dedup
+    elif name == 'oldest':
+        return oldest_dedup
+    elif name == 'oldest-any':
+        return oldest_any_dedup
     elif name == 'largest':
+        return largest_dedup
+    elif name == 'largest-any':
         return largest_dedup
     elif name == 'mostfreespace':
         return drive_with_most_space_dedup
@@ -270,7 +303,7 @@ def buildargparser():
                         choices=['same-size','different-size','same-hash','different-hash'],
                         help='ignore files if...')
     parser.add_argument('-d','--dedup',
-                        choices=['manual','newest','largest','mostfreespace'],
+                        choices=['manual','newest','newest-any','oldest','oldest-any','largest','largest-any','mostfreespace'],
                         default='newest',
                         help='what file to **keep**')
     parser.add_argument('-e','--execute',
