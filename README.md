@@ -93,39 +93,55 @@ optional arguments:
 
 ### mergerfs.dedup
 
-Finds and deduplicate files.
+Finds and removes duplicate files across mergerfs pool's branches. Use the
+`ignore`, `dedup`, and `strict` options to target specific use cases.
+
 
 ```
-# mergerfs.dedup -h
-usage: mergerfs.dedup [-h] [-v] [-i]
-                      [-d {manual,newest,largest,mostfreespace}] [-e]
-                      [-I INCLUDE] [-E EXCLUDE]
-                      dir
+usage: mergerfs.dedup [<options>] <dir>
 
-dedup files on a mergerfs mount
+Remove duplicate files across branches of a mergerfs pool. Provides
+multiple algos for determining which file to keep and what to skip.
 
 positional arguments:
-  dir                   starting directory
+  dir                    Starting directory
 
 optional arguments:
-  -h, --help            show this help message and exit
-  -v, --verbose         print additional information: use once for duped
-                        files, twice for file info
-  -i, --ignore          use once to ignore duped files of the same size, twice
-                        to ignore files with matching md5sums
-  -d {manual,newest,largest,mostfreespace}, --dedup {manual,newest,largest,mostfreespace}
-                        dedup policy: what file to keep
-  -e, --execute         without this it will dryrun
-  -I INCLUDE, --include INCLUDE
-                        fnmatch compatible filter (can use multiple times
-  -E EXCLUDE, --exclude EXCLUDE
-                        fnmatch compatible filter (can use multiple times
+  -v, --verbose          Once to print `rm` commands
+                         Twice for status info
+                         Three for file info
+  -i, --ignore=          Ignore files if... (default: none)
+                         * same-size      : have the same size
+                         * different-size : have different sizes
+                         * same-time      : have the same mtime
+                         * different-time : have different mtimes
+                         * same-hash      : have the same md5sum
+                         * different-hash : have different md5sums
+  -d, --dedup=           What file to *keep* (default: newest)
+                         * manual        : ask user
+                         * oldest        : file with smallest mtime
+                         * newest        : file with largest mtime
+                         * largest       : file with largest size
+                         * smallest      : file with smallest size
+                         * mostfreespace : file on drive with most free space
+  -s, --strict           Skip dedup if all files have same value.
+                         Only applies to oldest, newest, largest, smallest.
+  -e, --execute          Will not perform file removal without this.
+  -I, --include=         fnmatch compatible filter to include files.
+                         Can be used multiple times.
+  -E, --exclude=         fnmatch compatible filter to exclude files.
+                         Can be used multiple times.
 
 # mergerfs.dedup /path/to/dir
-Total savings: 38.0GB
+# Total savings: 10.0GB
 
-# mergerfs.dedup -e -d manual /path/to/dir
-...
+# mergerfs.dedup -e -d newest /path/to/dir
+mergerfs.dedup -v -d newest /media/tmp/test
+rm -vf /mnt/drive0/test/foo
+rm -vf /mnt/drive1/test/foo
+rm -vf /mnt/drive2/test/foo
+rm -vf /mnt/drive3/test/foo
+# Total savings: 10.0B
 ```
 
 
