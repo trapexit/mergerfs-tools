@@ -69,6 +69,21 @@ def hash_file(filepath, hasher=None, blocksize=65536):
     return hasher.hexdigest()
 
 
+def hash_file_1MB(filepath, hasher=None, blocksize=65536, total=1048576):
+    if not hasher:
+        hasher = hashlib.md5()
+
+    with open(filepath,'rb') as afile:
+        count = blocksize
+        buf = afile.read(blocksize)
+        while buf and (count <= total):
+            hasher.update(buf)
+            count += blocksize
+            buf = afile.read(blocksize)
+
+    return hasher.hexdigest()
+
+
 def sizeof_fmt(num):
     for unit in ['','K','M','G','T','P','E','Z']:
         if abs(num) < 1024.0:
@@ -146,9 +161,17 @@ def mtime_all(stats):
     return all(x[1].st_mtime == mtime for x in stats)
 
 
+def mtime_any(mtime,stats):
+    return any([st.st_mtime == mtime for (path,st) in stats])
+
+
 def size_all(stats):
     size = stats[0][1].st_size
     return all(x[1].st_size == size for x in stats)
+
+
+def size_any(size,stats):
+    return any([st.st_size == size for (path,st) in stats])
 
 
 def md5sums_all(stats):
@@ -158,8 +181,15 @@ def md5sums_all(stats):
     return False
 
 
+def md5sums_1MB_all(stats):
+    if size_all(stats):
+        hashval = hash_file_1MB(stats[0][0])
+        return all(hash_file_1MB(path) == hashval for (path,st) in stats[1:])
+    return False
+
+
 def oldest_dedup(stats):
-    if mtime_all(stats):
+    if size_all(stats) and mtime_all(stats):
         drive_with_most_space_dedup(stats)
         return
 
@@ -169,15 +199,16 @@ def oldest_dedup(stats):
 
 
 def strict_oldest_dedup(stats):
-    if mtime_all(stats):
-        stats.clear()
-        return
+    stats.sort(key=lambda st: st[1].st_mtime,reverse=False)
 
-    return oldest_dedup(stats)
+    oldest = stats[0]
+    stats.remove(oldest)
+    if mtime_any(oldest[1].st_mtime,stats):
+        stats.clear()
 
 
 def newest_dedup(stats):
-    if mtime_all(stats):
+    if size_all(stats) and mtime_all(stats):
         drive_with_most_space_dedup(stats)
         return
 
@@ -187,15 +218,16 @@ def newest_dedup(stats):
 
 
 def strict_newest_dedup(stats):
-    if mtime_all(stats):
-        stats.clear()
-        return
+    stats.sort(key=lambda st: st[1].st_mtime,reverse=True)
 
-    return newest_dedup(stats)
+    newest = stats[0]
+    stats.remove(newest)
+    if mtime_any(newest[1].st_mtime,stats):
+        stats.clear()
 
 
 def largest_dedup(stats):
-    if size_all(stats):
+    if size_all(stats) and mtime_all(stats):
         drive_with_most_space_dedup(stats)
         return
 
@@ -205,15 +237,16 @@ def largest_dedup(stats):
 
 
 def strict_largest_dedup(stats):
-    if size_all(stats):
-        stats.clear()
-        return
+    stats.sort(key=lambda st: st[1].st_size,reverse=True)
 
-    return largest_dedup(stats)
+    largest = stats[0]
+    stats.remove(largest)
+    if size_any(largest[1].st_size,stats):
+        stats.clear()
 
 
 def smallest_dedup(stats):
-    if size_all(stats):
+    if size_all(stats) and mtime_all(stats):
         drive_with_most_space_dedup(stats)
         return
 
@@ -223,11 +256,12 @@ def smallest_dedup(stats):
 
 
 def strict_smallest_dedup(stats):
-    if size_all(stats):
-        stats.clear()
-        return
+    stats.sort(key=lambda st: st[1].st_size,reverse=False)
 
-    return smallest_dedup(stats)
+    smallest = stats[0]
+    stats.remove(smallest)
+    if size_any(smallest[1].st_size,stats):
+        stats.clear()
 
 
 def calc_space_free(stat):
@@ -290,12 +324,14 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
         return 0
 
     stats = stat_files(paths)
-    if (((ignore == 'same-time')      and     mtime_all(stats))   or
-        ((ignore == 'different-time') and not mtime_all(stats))   or
-        ((ignore == 'same-size')      and     size_all(stats))    or
-        ((ignore == 'different-size') and not size_all(stats))    or
-        ((ignore == 'same-hash')      and     md5sums_all(stats)) or
-        ((ignore == 'different-hash') and not md5sums_all(stats))):
+    if (((ignore == 'same-time')       and     mtime_all(stats))       or
+        ((ignore == 'diff-time')       and not mtime_all(stats))       or
+        ((ignore == 'same-size')       and     size_all(stats))        or
+        ((ignore == 'diff-size')       and not size_all(stats))        or
+        ((ignore == 'same-hash')       and     md5sums_all(stats))     or
+        ((ignore == 'diff-hash')       and not md5sums_all(stats))     or
+        ((ignore == 'same-short-hash') and     md5sums_1MB_all(stats)) or
+        ((ignore == 'diff-short-hash') and not md5sums_1MB_all(stats))):
         if verbose >= 2:
             print('# ignored:',fullpath)
         return 0
@@ -350,12 +386,16 @@ optional arguments:
                          Twice for status info
                          Three for file info
   -i, --ignore=          Ignore files if... (default: none)
-                         * same-size      : have the same size
-                         * different-size : have different sizes
-                         * same-time      : have the same mtime
-                         * different-time : have different mtimes
-                         * same-hash      : have the same md5sum
-                         * different-hash : have different md5sums
+                         * same-size       : have the same size
+                         * diff-size       : have different sizes
+                         * same-time       : have the same mtime
+                         * diff-time       : have different mtimes
+                         * same-hash       : have the same md5sum
+                         * diff-hash       : have different md5sums
+                         * same-short-hash : have the same short md5sums
+                         * diff-short-hash : have different short md5sums
+                         'hash' is expensive. 'short-hash' far less
+                         expensive but not as secure.
   -d, --dedup=           What file to *keep* (default: newest)
                          * manual        : ask user
                          * oldest        : file with smallest mtime
@@ -363,7 +403,7 @@ optional arguments:
                          * largest       : file with largest size
                          * smallest      : file with smallest size
                          * mostfreespace : file on drive with most free space
-  -s, --strict           Skip dedup if all files have same value.
+  -s, --strict           Skip dedup if all files have same (mtime,size) value.
                          Only applies to oldest, newest, largest, smallest.
   -e, --execute          Will not perform file removal without this.
   -I, --include=         fnmatch compatible filter to include files.
@@ -389,9 +429,11 @@ def buildargparser():
                         action='count',
                         default=0)
     parser.add_argument('-i','--ignore',
-                        choices=['same-size','different-size',
-                                 'same-time','different-time',
-                                 'same-hash','different-hash'])
+                        choices=['same-size','diff-size',
+                                 'same-time','diff-time',
+                                 'same-hash','diff-hash',
+                                 'same-short-hash',
+                                 'diff-short-hash'])
     parser.add_argument('-d','--dedup',
                         choices=['manual',
                                  'oldest','newest',
