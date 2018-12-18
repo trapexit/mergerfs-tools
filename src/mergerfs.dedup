@@ -20,6 +20,7 @@ import errno
 import fnmatch
 import hashlib
 import os
+import random
 import shlex
 import sys
 
@@ -69,17 +70,25 @@ def hash_file(filepath, hasher=None, blocksize=65536):
     return hasher.hexdigest()
 
 
-def hash_file_1MB(filepath, hasher=None, blocksize=65536, total=1048576):
+def short_hash_file(filepath, hasher=None, blocksize=65536, blocks=16):
     if not hasher:
         hasher = hashlib.md5()
 
-    with open(filepath,'rb') as afile:
-        count = blocksize
-        buf = afile.read(blocksize)
-        while buf and (count <= total):
-            hasher.update(buf)
-            count += blocksize
-            buf = afile.read(blocksize)
+    with open(filepath,'rb') as f:
+        size = os.fstat(f.fileno()).st_size
+        if size <= blocksize:
+            size = 1
+            blocks = 1
+
+        random.seed(size,version=2)
+        for _ in range(blocks):
+            offset = random.randrange(size)
+            f.seek(offset)
+            buf = f.read(blocksize)
+            if buf:
+                hasher.update(buf)
+            else:
+                break
 
     return hasher.hexdigest()
 
@@ -134,7 +143,7 @@ def total_size(stats):
     return total
 
 
-def manual_dedup(stats):
+def manual_dedup(fullpath,stats):
     done = False
     while not done:
         value = input("# Which to keep? ('s' to skip):")
@@ -181,16 +190,16 @@ def md5sums_all(stats):
     return False
 
 
-def md5sums_1MB_all(stats):
+def short_md5sums_all(stats):
     if size_all(stats):
-        hashval = hash_file_1MB(stats[0][0])
-        return all(hash_file_1MB(path) == hashval for (path,st) in stats[1:])
+        hashval = short_hash_file(stats[0][0])
+        return all(short_hash_file(path) == hashval for (path,st) in stats[1:])
     return False
 
 
-def oldest_dedup(stats):
+def oldest_dedup(fullpath,stats):
     if size_all(stats) and mtime_all(stats):
-        drive_with_most_space_dedup(stats)
+        drive_with_most_space_dedup(fullpath,stats)
         return
 
     stats.sort(key=lambda st: st[1].st_mtime)
@@ -198,7 +207,7 @@ def oldest_dedup(stats):
     stats.remove(oldest)
 
 
-def strict_oldest_dedup(stats):
+def strict_oldest_dedup(fullpath,stats):
     stats.sort(key=lambda st: st[1].st_mtime,reverse=False)
 
     oldest = stats[0]
@@ -207,9 +216,9 @@ def strict_oldest_dedup(stats):
         stats.clear()
 
 
-def newest_dedup(stats):
+def newest_dedup(fullpath,stats):
     if size_all(stats) and mtime_all(stats):
-        drive_with_most_space_dedup(stats)
+        drive_with_most_space_dedup(fullpath,stats)
         return
 
     stats.sort(key=lambda st: st[1].st_mtime,reverse=True)
@@ -217,7 +226,7 @@ def newest_dedup(stats):
     stats.remove(newest)
 
 
-def strict_newest_dedup(stats):
+def strict_newest_dedup(fullpath,stats):
     stats.sort(key=lambda st: st[1].st_mtime,reverse=True)
 
     newest = stats[0]
@@ -226,9 +235,9 @@ def strict_newest_dedup(stats):
         stats.clear()
 
 
-def largest_dedup(stats):
+def largest_dedup(fullpath,stats):
     if size_all(stats) and mtime_all(stats):
-        drive_with_most_space_dedup(stats)
+        drive_with_most_space_dedup(fullpath,stats)
         return
 
     stats.sort(key=lambda st: st[1].st_size,reverse=True)
@@ -236,7 +245,7 @@ def largest_dedup(stats):
     stats.remove(largest)
 
 
-def strict_largest_dedup(stats):
+def strict_largest_dedup(fullpath,stats):
     stats.sort(key=lambda st: st[1].st_size,reverse=True)
 
     largest = stats[0]
@@ -245,9 +254,9 @@ def strict_largest_dedup(stats):
         stats.clear()
 
 
-def smallest_dedup(stats):
+def smallest_dedup(fullpath,stats):
     if size_all(stats) and mtime_all(stats):
-        drive_with_most_space_dedup(stats)
+        drive_with_most_space_dedup(fullpath,stats)
         return
 
     stats.sort(key=lambda st: st[1].st_size)
@@ -255,7 +264,7 @@ def smallest_dedup(stats):
     stats.remove(smallest)
 
 
-def strict_smallest_dedup(stats):
+def strict_smallest_dedup(fullpath,stats):
     stats.sort(key=lambda st: st[1].st_size,reverse=False)
 
     smallest = stats[0]
@@ -269,13 +278,22 @@ def calc_space_free(stat):
     return st.f_frsize * st.f_bfree
 
 
-def drive_with_most_space_dedup(stats):
+def drive_with_most_space_dedup(fullpath,stats):
     stats.sort(key=calc_space_free,reverse=True)
     largest = stats[0]
     stats.remove(largest)
 
 
-def getdedupfun(name,strict):
+def mergerfs_getattr_dedup(origpath,stats):
+    fullpath = getxattr(origpath,b'user.mergerfs.fullpath')
+    for (path,stat) in stats:
+        if path != fullpath:
+            continue
+        stats.remove((path,stat))
+        break
+
+
+def get_dedupfun(name,strict):
     if strict:
         name = 'strict-' + name
     funs = {
@@ -290,8 +308,26 @@ def getdedupfun(name,strict):
         'largest': largest_dedup,
         'strict-largest': strict_largest_dedup,
         'smallest': smallest_dedup,
-        'strict-smallest': strict_smallest_dedup
+        'strict-smallest': strict_smallest_dedup,
+        'mergerfs': mergerfs_getattr_dedup,
+        'strict-mergerfs': mergerfs_getattr_dedup
     }
+    return funs[name]
+
+
+def get_ignorefun(name):
+    funs = {
+        None: lambda x: None,
+        'same-time': mtime_all,
+        'diff-time': lambda x: not mtime_all(x),
+        'same-size': size_all,
+        'diff-size': lambda x: not size_all(x),
+        'same-hash': md5sums_all,
+        'diff-hash': lambda x: not md5sums_all(x),
+        'same-short-hash': short_md5sums_all,
+        'diff-short-hash': lambda x: not short_md5sums_all(x)
+    }
+
     return funs[name]
 
 
@@ -318,20 +354,14 @@ def match(filename,matches):
     return False
 
 
-def dedup(fullpath,verbose,ignore,execute,dedupfun):
+def dedup(fullpath,verbose,ignorefun,execute,dedupfun):
     paths = getxattr(fullpath,b'user.mergerfs.allpaths').split('\0')
     if len(paths) <= 1:
         return 0
 
     stats = stat_files(paths)
-    if (((ignore == 'same-time')       and     mtime_all(stats))       or
-        ((ignore == 'diff-time')       and not mtime_all(stats))       or
-        ((ignore == 'same-size')       and     size_all(stats))        or
-        ((ignore == 'diff-size')       and not size_all(stats))        or
-        ((ignore == 'same-hash')       and     md5sums_all(stats))     or
-        ((ignore == 'diff-hash')       and not md5sums_all(stats))     or
-        ((ignore == 'same-short-hash') and     md5sums_1MB_all(stats)) or
-        ((ignore == 'diff-short-hash') and not md5sums_1MB_all(stats))):
+
+    if ignorefun(stats):
         if verbose >= 2:
             print('# ignored:',fullpath)
         return 0
@@ -341,7 +371,7 @@ def dedup(fullpath,verbose,ignore,execute,dedupfun):
         print_stats(stats)
 
     try:
-        dedupfun(stats)
+        dedupfun(fullpath,stats)
         if not stats:
             if verbose >= 2:
                 print('# skipped:',fullpath)
@@ -395,14 +425,16 @@ optional arguments:
                          * same-short-hash : have the same short md5sums
                          * diff-short-hash : have different short md5sums
                          'hash' is expensive. 'short-hash' far less
-                         expensive but not as secure.
-  -d, --dedup=           What file to *keep* (default: newest)
+                         expensive, not as safe, but pretty good.
+  -d, --dedup=           What file to *keep* (default: mergerfs)
                          * manual        : ask user
                          * oldest        : file with smallest mtime
                          * newest        : file with largest mtime
                          * largest       : file with largest size
                          * smallest      : file with smallest size
                          * mostfreespace : file on drive with most free space
+                         * mergerfs      : file selected by the mergerfs
+                                           getattr policy
   -s, --strict           Skip dedup if all files have same (mtime,size) value.
                          Only applies to oldest, newest, largest, smallest.
   -e, --execute          Will not perform file removal without this.
@@ -438,8 +470,9 @@ def buildargparser():
                         choices=['manual',
                                  'oldest','newest',
                                  'smallest','largest',
-                                 'mostfreespace'],
-                        default='newest')
+                                 'mostfreespace',
+                                 'mergerfs'],
+                        default='mergerfs')
     parser.add_argument('-s','--strict',
                         action='store_true')
     parser.add_argument('-e','--execute',
@@ -459,27 +492,27 @@ def buildargparser():
 
 
 def main():
-    parser   = buildargparser()
-    args     = parser.parse_args()
+    parser = buildargparser()
+    args   = parser.parse_args()
 
     if args.help or not args.dir:
         print_help()
         sys.exit(0)
-
-    dedupfun = getdedupfun(args.dedup,args.strict)
 
     args.dir = os.path.realpath(args.dir)
     if not ismergerfs(args.dir):
         print("%s is not a mergerfs directory" % args.dir)
         sys.exit(1)
 
+    dedupfun  = get_dedupfun(args.dedup,args.strict)
+    ignorefun = get_ignorefun(args.ignore)
+    verbose   = args.verbose
+    execute   = args.execute
+    includes  = ['*'] if not args.include else args.include
+    excludes  = args.exclude
+
     total_size = 0
     try:
-        verbose  = args.verbose
-        ignore   = args.ignore
-        execute  = args.execute
-        includes = ['*'] if not args.include else args.include
-        excludes = args.exclude
         for (dirname,dirnames,filenames) in os.walk(args.dir):
             for filename in filenames:
                 if match(filename,excludes):
@@ -487,7 +520,7 @@ def main():
                 if not match(filename,includes):
                     continue
                 fullpath    = os.path.join(dirname,filename)
-                total_size += dedup(fullpath,verbose,ignore,execute,dedupfun)
+                total_size += dedup(fullpath,verbose,ignorefun,execute,dedupfun)
     except KeyboardInterrupt:
         print("# exiting: CTRL-C pressed")
     except IOError as e:
