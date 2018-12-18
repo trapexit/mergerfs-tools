@@ -56,32 +56,26 @@ def ismergerfs(path):
         return False
 
 
-def hash_file(filepath, hasher=None, blocksize=65536):
+# this function may read more than total if total is not a multiple
+# of the block size
+def hash_file(filepath, hasher=None, blocksize=65536, total=-1):
     if not hasher:
         hasher = hashlib.md5()
-
+    count = 0
     with open(filepath,'rb') as afile:
         buf = afile.read(blocksize)
-        while buf:
+        while buf and ((total < 0) or (count < total)):
+            count += len(buf)
             hasher.update(buf)
-            buf = afile.read(blocksize)
-
+            if (total < 0) or (count < total):
+                buf = afile.read(blocksize)
+            else:
+                buf = None
     return hasher.hexdigest()
-
 
 def hash_file_1MB(filepath, hasher=None, blocksize=65536, total=1048576):
-    if not hasher:
-        hasher = hashlib.md5()
+    return hash_file(filepath, hasher, blocksize, total)
 
-    with open(filepath,'rb') as afile:
-        count = blocksize
-        buf = afile.read(blocksize)
-        while buf and (count <= total):
-            hasher.update(buf)
-            count += blocksize
-            buf = afile.read(blocksize)
-
-    return hasher.hexdigest()
 
 
 def sizeof_fmt(num):
