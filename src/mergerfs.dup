@@ -120,7 +120,7 @@ positional arguments:
   dir                    starting directory
 
 optional arguments:
-  -c, --count=           Number of files to duplicate. (default: 2)
+  -c, --count=           Number of copies to create. (default: 2)
   -d, --dup=             Which file (if more than one exists) to choose to
                          duplicate. Each one falls back to `mergerfs` if
                          all files have the same value. (default: newest)
