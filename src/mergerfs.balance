@@ -19,6 +19,7 @@ import ctypes
 import errno
 import fnmatch
 import os
+import shlex
 import subprocess
 import sys
 
@@ -116,17 +117,22 @@ def execute(args):
     return subprocess.call(args)
 
 
-def move_file(src,dst,relfile):
+def print_args(args):
+    quoted = [shlex.quote(arg) for arg in args]
+    print(' '.join(quoted))
+
+
+def build_move_file(src,dst,relfile):
     frompath = os.path.join(src,'./',relfile)
     topath   = dst+'/'
     args = ['rsync',
-            '-alXA',
+            '-avlHAXWES',
             '--relative',
             '--progress',
             '--remove-source-files',
             frompath,
             topath]
-    return execute(args)
+    return args
 
 
 def freespace_percentage(srcmounts):
@@ -254,8 +260,11 @@ def main():
             if relfilepath in seen:
                 break;
             seen.add(relfilepath)
-            print('from: {}\nto:   {}'.format(fromdrive,todrive))
-            rv = move_file(fromdrive,todrive,relfilepath)
+
+            args = build_move_file(fromdrive,todrive,relfilepath)
+            print('file: {}\nfrom: {}\nto:   {}'.format(relfilepath,fromdrive,todrive))
+            print_args(args)
+            rv = execute(args)
             if rv:
                 break;
             l = freespace_percentage(srcmounts)
