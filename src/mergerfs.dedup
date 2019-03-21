@@ -526,6 +526,8 @@ def main():
     except IOError as e:
         if e.errno == errno.EPIPE:
             pass
+        else:
+            raise
 
     print('# Total savings:',sizeof_fmt(total_size))
 
