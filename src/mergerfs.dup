@@ -37,7 +37,7 @@ def lgetxattr(path,name):
         buf = ctypes.create_string_buffer(length)
         res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
         if res >= 0:
-            return buf.raw[0:res]
+            return buf.raw[0:res].decode()
         else:
             err = ctypes.get_errno()
             if err == errno.ERANGE:
@@ -50,7 +50,7 @@ def lgetxattr(path,name):
 
 def ismergerfs(path):
     try:
-        lgetxattr(path,'user.mergerfs.allpaths')
+        lgetxattr(path,'user.mergerfs.basepath')
         return True
     except IOError as e:
         return False
@@ -67,8 +67,8 @@ def mergerfs_control_file(basedir):
 
 
 def mergerfs_branches(ctrlfile):
-    branches = lgetxattr(ctrlfile,b'user.mergerfs.srcmounts')
-    branches = branches.split(b':')
+    branches = lgetxattr(ctrlfile,'user.mergerfs.srcmounts')
+    branches = branches.split(':')
     return branches
 
 
@@ -84,18 +84,18 @@ def execute_cmd(args):
 
 
 def print_args(args):
-    quoted = [shlex.quote(arg.decode()) for arg in args]
+    quoted = [shlex.quote(arg) for arg in args]
     print(' '.join(quoted))
 
 
 def build_copy_file(src,tgt,rel):
-    srcpath = os.path.join(src,b'./',rel)
-    tgtpath = tgt + b'/'
-    return [b'rsync',
-            b'-avHAXWES',
-            b'--numeric-ids',
-            b'--progress',
-            b'--relative',
+    srcpath = os.path.join(src,'./',rel)
+    tgtpath = tgt + '/'
+    return ['rsync',
+            '-avHAXWES',
+            '--numeric-ids',
+            '--progress',
+            '--relative',
             srcpath,
             tgtpath]
 
@@ -178,18 +178,61 @@ def buildargparser():
     return parser
 
 
+def xattr_basepath(fullpath):
+    return lgetxattr(fullpath,'user.mergerfs.basepath')
+
+
+def xattr_allpaths(fullpath):
+    return lgetxattr(fullpath,'user.mergerfs.allpaths')
+
+
+def xattr_relpath(fullpath):
+    return lgetxattr(fullpath,'user.mergerfs.relpath')
+
+
+def exists(base,rel,name):
+    fullpath = os.path.join(base,rel,name)
+    return os.path.lexists(fullpath)
+
+
 def mergerfs_all_basepaths(fullpath,relpath):
-    rv = lgetxattr(fullpath,b'user.mergerfs.allpaths')
-    rv = rv.split(b'\0')
-    return [x[:-len(relpath)].rstrip(b'/') for x in rv]
+    attr = xattr_allpaths(fullpath)
+    if not attr:
+        dirname  = os.path.dirname(fullpath)
+        basename = os.path.basename(fullpath)
+        attr     = xattr_allpaths(dirname)
+        attr     = attr.split('\0')
+        attr     = [os.path.join(path,basename)
+                    for path in attr
+                    if os.path.lexists(os.path.join(path,basename))]
+    else:
+        attr = attr.split('\0')
+    return [x[:-len(relpath)].rstrip('/') for x in attr]
 
 
 def mergerfs_basepath(fullpath):
-    return lgetxattr(fullpath,b'user.mergerfs.basepath')
+    attr = xattr_basepath(fullpath)
+    if not attr:
+        dirname  = os.path.dirname(fullpath)
+        basename = os.path.basename(fullpath)
+        attr     = xattr_allpaths(dirname)
+        attr     = attr.split('\0')
+        for path in attr:
+            fullpath = os.path.join(path,basename)
+            if os.path.lexists(fullpath):
+                relpath = xattr_relpath(dirname)
+                return path[:-len(relpath)].rstrip('/')
+    return attr
 
 
 def mergerfs_relpath(fullpath):
-    return lgetxattr(fullpath,b'user.mergerfs.relpath').lstrip(b'/')
+    attr = xattr_relpath(fullpath)
+    if not attr:
+        dirname  = os.path.dirname(fullpath)
+        basename = os.path.basename(fullpath)
+        attr     = xattr_relpath(dirname)
+        attr     = os.path.join(attr,basename)
+    return attr.lstrip('/')
 
 
 def newest_dupfun(default_basepath,relpath,basepaths):
@@ -292,7 +335,7 @@ def main():
 
                 srcpath  = dupfun(basepath,relpath,existing)
                 srcfile  = os.path.join(srcpath,relpath)
-                srcfile_size = os.stat(srcfile).st_size
+                srcfile_size = os.lstat(srcfile).st_size
                 existing.remove(srcpath)
 
                 i = 1
@@ -328,7 +371,7 @@ def main():
                         branches[branch] += srcfile_size
                         tgtfile = os.path.join(branch,relpath)
                         print('# remove')
-                        args = [b'rm',b'-vf',tgtfile]
+                        args = ['rm','-vf',tgtfile]
                         print_args(args)
                         if execute:
                             execute_cmd(args)
