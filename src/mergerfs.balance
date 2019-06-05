@@ -247,6 +247,8 @@ def main():
             todrive     = l[-1][0]
             relfilepath = None
             while not relfilepath:
+                if len(l) == 0 or len(l[0]) == 0:
+                    break
                 fromdrive = l[0][0]
                 del l[0]
                 relfilepath = find_a_file(fromdrive,
@@ -258,7 +260,7 @@ def main():
             if fromdrive == todrive:
                 break
             if relfilepath in seen:
-                break;
+                break
             seen.add(relfilepath)
 
             args = build_move_file(fromdrive,todrive,relfilepath)
@@ -266,7 +268,7 @@ def main():
             print_args(args)
             rv = execute(args)
             if rv:
-                break;
+                break
             l = freespace_percentage(srcmounts)
     except KeyboardInterrupt:
         print("exiting: CTRL-C pressed")
