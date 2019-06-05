@@ -117,21 +117,39 @@ def execute(args):
     return subprocess.call(args)
 
 
+def execute_with_stdout(args):
+    result = subprocess.run(args, stdout=subprocess.PIPE)
+    return result.stdout.decode('utf-8')
+
+
 def print_args(args):
     quoted = [shlex.quote(arg) for arg in args]
     print(' '.join(quoted))
 
 
-def build_move_file(src,dst,relfile):
-    frompath = os.path.join(src,'./',relfile)
+def build_move_files(src,dst,relfiles):
     topath   = dst+'/'
     args = ['rsync',
             '-avlHAXWES',
             '--relative',
             '--progress',
-            '--remove-source-files',
-            frompath,
-            topath]
+            '--remove-source-files']
+
+    for f in relfiles:
+        args.append(os.path.join(src,'./',f))
+
+    args.append(topath)
+    return args
+
+def build_find_links(src,relfile):
+    filepath = os.path.join(src,relfile)
+    args = ['find',
+            src,
+            '-samefile',
+            filepath,
+            '-not',
+            '-path',
+            filepath]
     return args
 
 
@@ -261,8 +279,20 @@ def main():
                 break;
             seen.add(relfilepath)
 
-            args = build_move_file(fromdrive,todrive,relfilepath)
-            print('file: {}\nfrom: {}\nto:   {}'.format(relfilepath,fromdrive,todrive))
+            args = build_find_links(fromdrive,relfilepath)
+
+            relfilepaths = [relfilepath]
+            links = execute_with_stdout(args).splitlines()
+            if len(links) > 0:
+                for l in links:
+                    rel = os.path.relpath(l, fromdrive)
+                    relfilepaths.append(rel)
+
+            args = build_move_files(fromdrive,todrive,relfilepaths)
+
+            for f in relfilepaths:
+                print('file: '+f)
+            print('from: {}\nto:   {}'.format(fromdrive,todrive))
             print_args(args)
             rv = execute(args)
             if rv:
