@@ -195,6 +195,33 @@ to:   /mnt/drive2/foo/bar
 rsync ...
 ```
 
+
+### mergerfs.consolidate
+
+Consolidate files in a single mergerfs directory onto a single drive.
+
+Run as `root`. Requires `rsync` to be installed.
+
+```
+usage: mergerfs.consolidate [<options>] <dir>
+
+positional arguments:
+  dir                    starting directory
+
+optional arguments:
+  -m, --max-files=       Skip directories with more than N files.
+                         (default: 256)
+  -M, --max-size=        Skip directories with files adding up to more
+                         than N. (default: 16G)
+  -I, --include-path=    fnmatch compatible path include filter.
+                         Can be used multiple times.
+  -E, --exclude-path=    fnmatch compatible path exclude filter.
+                         Can be used multiple times.
+  -e, --execute          Execute `rsync` commands as well as print them.
+  -h, --help             Print this help.
+```
+
+
 ### mergerfs.mktrash
 
 Will create [FreeDesktop.org Trash specification](https://specifications.freedesktop.org/trash-spec/trashspec-1.0.html) compatible directories on a mergerfs mount. Helps minimize issues with apps which `rename` into the trash directory. This shouldn't be necessary if you're not using a path perservation policy.
