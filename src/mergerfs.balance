@@ -216,6 +216,10 @@ def buildargparser():
 
 
 def main():
+    sys.stdout = open(sys.stdout.fileno(),'w',
+                      encoding='utf8',errors='surrogateescape',
+                      closefd=False)
+
     parser = buildargparser()
     args = parser.parse_args()
 
