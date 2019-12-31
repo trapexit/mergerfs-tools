@@ -198,7 +198,7 @@ rsync ...
 
 ### mergerfs.consolidate
 
-Consolidate files in a single mergerfs directory onto a single drive.
+Consolidate **files** in a **single** mergerfs directory onto a **single** drive, recursively. This does **NOT** move all files at and below that directory to 1 drive. If you want to move data between drives simply use normal rsync or similar. This tool is only useful in niche usecases where the person wants to colocate files of their TV, music, etc. files onto a single drive *after the fact.* If you really wanted that you should probably use path preservation. For most people there is only downsides to using path preservation or colocating files.
 
 Run as `root`. Requires `rsync` to be installed.
 
