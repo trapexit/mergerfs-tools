@@ -21,11 +21,14 @@ import sys
 
 def find_mergerfs():
     rv = []
-    with open('/proc/mounts','r') as f:
+    with open('/proc/self/mountinfo','r') as f:
         for line in f:
             values = line.split()
-            if values[2] == 'fuse.mergerfs':
-                rv.append(values[1])
+            mountroot, mountpoint = values[3:5]
+            separator = values.index('-', 6)
+            fstype = values[separator + 1]
+            if fstype == 'fuse.mergerfs' and mountroot == '/':
+                rv.append(mountpoint)
     return rv
 
 
