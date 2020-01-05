@@ -66,6 +66,8 @@ def ismergerfs(path):
 
 
 def mergerfs_control_file(basedir):
+    if basedir == '/':
+        return None
     ctrlfile = os.path.join(basedir,'.mergerfs')
     if os.path.exists(ctrlfile):
         return ctrlfile
