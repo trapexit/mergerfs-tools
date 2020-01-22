@@ -18,9 +18,10 @@ import argparse
 import ctypes
 import errno
 import fnmatch
+import io
 import os
-import subprocess
 import shlex
+import subprocess
 import sys
 
 
@@ -29,15 +30,15 @@ _lgetxattr = _libc.lgetxattr
 _lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
 def lgetxattr(path,name):
     if type(path) == str:
-        path = path.encode('utf-8','surrogateescape')
+        path = path.encode(errors='surrogateescape')
     if type(name) == str:
-        name = name.encode('utf-8','surrogateescape')
+        name = name.encode(errors='surrogateescape')
     length = 64
     while True:
         buf = ctypes.create_string_buffer(length)
         res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
         if res >= 0:
-            return buf.raw[0:res].decode()
+            return buf.raw[0:res].decode(errors='surrogateescape')
         else:
             err = ctypes.get_errno()
             if err == errno.ERANGE:
@@ -297,6 +298,13 @@ def getdupfun(name):
 
 
 def main():
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer,
+                                  errors="surrogateescape",
+                                  line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer,
+                                  errors="surrogateescape",
+                                  line_buffering=True)
+
     parser = buildargparser()
     args = parser.parse_args()
 
