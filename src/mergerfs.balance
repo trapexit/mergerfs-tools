@@ -250,15 +250,12 @@ def main():
     srcmounts     = mergerfs_srcmounts(ctrlfile)
     percentage    = args.percentage / 100
 
-    seen = set()
     try:
         l = freespace_percentage(srcmounts)
         while not all_within_range(l,percentage):
             todrive     = l[-1][0]
             relfilepath = None
-            while not relfilepath:
-                if len(l) == 0 or len(l[0]) == 0:
-                    break
+            while not relfilepath and len(l):
                 fromdrive = l[0][0]
                 del l[0]
                 relfilepath = find_a_file(fromdrive,
@@ -266,14 +263,12 @@ def main():
                                           file_includes,file_excludes,
                                           path_includes,path_excludes,
                                           exclude_lt,exclude_gt)
-
+            if len(l) == 0:
+                print('Could not find file to transfer: exiting...')
+                break
             if fromdrive == todrive:
                 print('Source drive == target drive: exiting...')
                 break
-            if relfilepath in seen:
-                print('Already seen file: exiting...')
-                break
-            seen.add(relfilepath)
 
             args = build_move_file(fromdrive,todrive,relfilepath)
             print('file: {}\nfrom: {}\nto:   {}'.format(relfilepath,fromdrive,todrive))
@@ -283,6 +278,9 @@ def main():
                 print('ERROR - exited with exit code: {}'.format(rv))
                 break
             l = freespace_percentage(srcmounts)
+        print('Branches within {:.1%} range: '.format(percentage))
+        for (branch,percentage) in l:
+            print(' * {}: {:.2%} free'.format(branch,percentage))
     except KeyboardInterrupt:
         print("exiting: CTRL-C pressed")
 
