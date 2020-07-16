@@ -215,6 +215,11 @@ def buildargparser():
                         type=str,
                         default='0',
                         help='exclude files larger than <int>[KMGT] bytes')
+    parser.add_argument('-P',
+                        dest='purgepath',
+                        type=str,
+                        default=None,
+                        help='Source mountpoint in current pool to be purged')
     return parser
 
 
@@ -247,17 +252,23 @@ def main():
     path_excludes = args.excludepath
     exclude_lt    = human_to_bytes(args.excludelt)
     exclude_gt    = human_to_bytes(args.excludegt)
+    purgepath     = args.purgepath
     srcmounts     = mergerfs_srcmounts(ctrlfile)
     percentage    = args.percentage / 100
 
     try:
+        if purgepath is not None:
+            srcmounts.remove(purgepath)
         l = freespace_percentage(srcmounts)
         while not all_within_range(l,percentage):
             todrive     = l[-1][0]
             relfilepath = None
             while not relfilepath and len(l):
-                fromdrive = l[0][0]
-                del l[0]
+                if purgepath is not None:
+                    fromdrive = purgepath
+                else:
+                    fromdrive = l[0][0]
+                    del l[0]
                 relfilepath = find_a_file(fromdrive,
                                           relpath,
                                           file_includes,file_excludes,
