@@ -31,9 +31,9 @@ _lgetxattr = _libc.lgetxattr
 _lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
 def lgetxattr(path,name):
     if type(path) == str:
-        path = path.encode(errors='surrogateescape')
+        path = path.encode(errors='backslashreplace')
     if type(name) == str:
-        name = name.encode(errors='surrogateescape')
+        name = name.encode(errors='backslashreplace')
     length = 64
     while True:
         buf = ctypes.create_string_buffer(length)
@@ -494,10 +494,12 @@ def buildargparser():
 
 def main():
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer,
-                                  errors="surrogateescape",
+                                  encoding='utf8',
+                                  errors='backslashreplace',
                                   line_buffering=True)
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer,
-                                  errors="surrogateescape",
+                                  encoding='utf8',
+                                  errors='backslashreplace',
                                   line_buffering=True)
 
     parser = buildargparser()
