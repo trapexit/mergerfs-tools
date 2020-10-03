@@ -29,16 +29,12 @@ _libc = ctypes.CDLL("libc.so.6",use_errno=True)
 _lgetxattr = _libc.lgetxattr
 _lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
 def lgetxattr(path,name):
-    if type(path) == str:
-        path = path.encode(errors='backslashreplace')
-    if type(name) == str:
-        name = name.encode(errors='backslashreplace')
     length = 64
     while True:
         buf = ctypes.create_string_buffer(length)
         res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
         if res >= 0:
-            return buf.raw[0:res].decode(errors='backslashreplace')
+            return buf.raw[0:res]
         else:
             err = ctypes.get_errno()
             if err == errno.ERANGE:
@@ -51,16 +47,16 @@ def lgetxattr(path,name):
 
 def ismergerfs(path):
     try:
-        lgetxattr(path,'user.mergerfs.basepath')
+        lgetxattr(path,b'user.mergerfs.basepath')
         return True
     except IOError as e:
         return False
 
 
 def mergerfs_control_file(basedir):
-    if basedir == '/':
+    if basedir == b'/':
         return None
-    ctrlfile = os.path.join(basedir,'.mergerfs')
+    ctrlfile = os.path.join(basedir,b'.mergerfs')
     if os.path.exists(ctrlfile):
         return ctrlfile
     basedir = os.path.dirname(basedir)
@@ -68,8 +64,8 @@ def mergerfs_control_file(basedir):
 
 
 def mergerfs_branches(ctrlfile):
-    branches = lgetxattr(ctrlfile,'user.mergerfs.srcmounts')
-    branches = branches.split(':')
+    branches = lgetxattr(ctrlfile,b'user.mergerfs.srcmounts')
+    branches = branches.split(b':')
     return branches
 
 
@@ -85,18 +81,18 @@ def execute_cmd(args):
 
 
 def print_args(args):
-    quoted = [shlex.quote(arg) for arg in args]
+    quoted = [shlex.quote(os.fsdecode(arg)) for arg in args]
     print(' '.join(quoted))
 
 
 def build_copy_file(src,tgt,rel):
-    srcpath = os.path.join(src,'./',rel)
-    tgtpath = tgt + '/'
-    return ['rsync',
-            '-avHAXWES',
-            '--numeric-ids',
-            '--progress',
-            '--relative',
+    srcpath = os.path.join(src,b'./',rel)
+    tgtpath = tgt + b'/'
+    return [b'rsync',
+            b'-avHAXWES',
+            b'--numeric-ids',
+            b'--progress',
+            b'--relative',
             srcpath,
             tgtpath]
 
@@ -145,7 +141,7 @@ optional arguments:
 def buildargparser():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('dir',
-                        type=str,
+                        type=os.fsencode,
                         nargs='?',
                         default=None)
     parser.add_argument('-c','--count',
@@ -165,12 +161,12 @@ def buildargparser():
                         action='store_true')
     parser.add_argument('-I','--include',
                         dest='include',
-                        type=str,
+                        type=os.fsencode,
                         action='append',
                         default=[])
     parser.add_argument('-E','--exclude',
                         dest='exclude',
-                        type=str,
+                        type=os.fsencode,
                         action='append',
                         default=[])
     parser.add_argument('-h','--help',
@@ -180,15 +176,15 @@ def buildargparser():
 
 
 def xattr_basepath(fullpath):
-    return lgetxattr(fullpath,'user.mergerfs.basepath')
+    return lgetxattr(fullpath,b'user.mergerfs.basepath')
 
 
 def xattr_allpaths(fullpath):
-    return lgetxattr(fullpath,'user.mergerfs.allpaths')
+    return lgetxattr(fullpath,b'user.mergerfs.allpaths')
 
 
 def xattr_relpath(fullpath):
-    return lgetxattr(fullpath,'user.mergerfs.relpath')
+    return lgetxattr(fullpath,b'user.mergerfs.relpath')
 
 
 def exists(base,rel,name):
@@ -202,13 +198,13 @@ def mergerfs_all_basepaths(fullpath,relpath):
         dirname  = os.path.dirname(fullpath)
         basename = os.path.basename(fullpath)
         attr     = xattr_allpaths(dirname)
-        attr     = attr.split('\0')
+        attr     = attr.split(b'\0')
         attr     = [os.path.join(path,basename)
                     for path in attr
                     if os.path.lexists(os.path.join(path,basename))]
     else:
-        attr = attr.split('\0')
-    return [x[:-len(relpath)].rstrip('/') for x in attr]
+        attr = attr.split(b'\0')
+    return [x[:-len(relpath)].rstrip(b'/') for x in attr]
 
 
 def mergerfs_basepath(fullpath):
@@ -217,12 +213,12 @@ def mergerfs_basepath(fullpath):
         dirname  = os.path.dirname(fullpath)
         basename = os.path.basename(fullpath)
         attr     = xattr_allpaths(dirname)
-        attr     = attr.split('\0')
+        attr     = attr.split(b'\0')
         for path in attr:
             fullpath = os.path.join(path,basename)
             if os.path.lexists(fullpath):
                 relpath = xattr_relpath(dirname)
-                return path[:-len(relpath)].rstrip('/')
+                return path[:-len(relpath)].rstrip(b'/')
     return attr
 
 
@@ -233,7 +229,7 @@ def mergerfs_relpath(fullpath):
         basename = os.path.basename(fullpath)
         attr     = xattr_relpath(dirname)
         attr     = os.path.join(attr,basename)
-    return attr.lstrip('/')
+    return attr.lstrip(b'/')
 
 
 def newest_dupfun(default_basepath,relpath,basepaths):
@@ -317,12 +313,12 @@ def main():
     args.dir = os.path.realpath(args.dir)
 
     if not ismergerfs(args.dir):
-        print("%s is not a mergerfs mount" % args.dir)
+        print('{} is not a mergerfs mount'.format(args.dir))
         sys.exit(1)
 
     prune     = args.prune
     execute   = args.execute
-    includes  = ['*'] if not args.include else args.include
+    includes  = [b'*'] if not args.include else args.include
     excludes  = args.exclude
     dupfun    = getdupfun(args.dup)
     ctrlfile  = mergerfs_control_file(args.dir)

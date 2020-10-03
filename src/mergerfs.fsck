@@ -26,10 +26,6 @@ _libc = ctypes.CDLL("libc.so.6",use_errno=True)
 _lgetxattr = _libc.lgetxattr
 _lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
 def lgetxattr(path,name):
-    if type(path) == str:
-        path = path.encode(errors='backslashreplace')
-    if type(name) == str:
-        name = name.encode(errors='backslashreplace')
     length = 64
     while True:
         buf = ctypes.create_string_buffer(length)
@@ -48,7 +44,7 @@ def lgetxattr(path,name):
 
 def ismergerfs(path):
     try:
-        lgetxattr(path,"user.mergerfs.fullpath")
+        lgetxattr(path,b'user.mergerfs.fullpath')
         return True
     except IOError as e:
         return False
@@ -59,10 +55,11 @@ def setstat(stat,paths):
         try:
             os.chmod(path,stat.st_mode)
             os.chown(path,stat.st_uid,stat.st_gid);
-            print("set %s > uid: %d gid: %d mode: %o" %
-                  (path,stat.st_uid,stat.st_gid,stat.st_mode))
+            s = 'set {} > uid: {} gid: {} mode: {}'
+            s = s.format(path,stat.st_uid,stat.st_gid,oct(stat.st_mode))
+            print(s,flush=True)
         except Exception as e:
-            print("%s" % e)
+            print('Error:',e,flush=True)
 
 
 def stats_different(stats):
@@ -84,15 +81,16 @@ def size_equal(stats):
 
 def print_stats(Files,Stats):
     for i in range(0,len(Files)):
-        print("  %i: %s" % (i,Files[i].decode(errors='backslashreplace')))
-        data = ("   - uid: {0:5}; gid: {1:5}; mode: {2:6o}; "
-                "size: {3:10}; mtime: {4}").format(
+        f = Files[i].decode(errors='backslashreplace')
+        print('  {}: {}'.format(i,f),flush=True)
+        data = ('   - uid: {0:5}; gid: {1:5}; mode: {2:6o}; '
+                'size: {3:10}; mtime: {4}').format(
             Stats[i].st_uid,
             Stats[i].st_gid,
             Stats[i].st_mode,
             Stats[i].st_size,
             Stats[i].st_mtime)
-        print (data)
+        print(data,flush=True)
 
 
 def noop_fix(paths,stats):
@@ -106,12 +104,12 @@ def manual_fix(paths,stats):
             value = input('Which is correct?: ')
             value = int(value)
             if((value >= len(paths)) or (value < 0)):
-                print("Input error: enter a value [0,%d]" % (len(paths)-1))
+                print('Input error: enter a value [0,{}]'.format(len(paths)-1),flush=True)
                 continue
             setstat(stats[value],paths)
             done = True
         except Exception as e:
-            print("%s" % e)
+            print('Error:',e,flush=True)
             done = True
 
 
@@ -121,7 +119,7 @@ def newest_fix(paths,stats):
         newest = stats[-1]
         setstat(newest,paths)
     except Exception as e:
-        print("%s" % e)
+        print('Error:',e,flush=True)
 
 
 def nonroot_fix(paths,stats):
@@ -132,7 +130,7 @@ def nonroot_fix(paths,stats):
                 return
         return newest_fix(paths,stats)
     except Exception as e:
-        print("%s" % e)
+        print('Error:',e,flush=True)
 
 
 def getfixfun(name):
@@ -146,11 +144,15 @@ def getfixfun(name):
 
 
 def check_consistancy(fullpath,verbose,size,fix):
-    paths = lgetxattr(fullpath,"user.mergerfs.allpaths")
-    if not paths:
-        return
-    paths = paths.split(b'\0')
-    if len(paths) <= 1:
+    try:
+        paths = lgetxattr(fullpath,b'user.mergerfs.allpaths')
+        if not paths:
+            return
+        paths = paths.split(b'\0')
+        if len(paths) <= 1:
+            return
+    except Exception as e:
+        print('Error:',e,'- skipping',flush=True)
         return
 
     stats = [os.stat(path) for path in paths]
@@ -159,7 +161,8 @@ def check_consistancy(fullpath,verbose,size,fix):
     if not stats_different(stats):
         return
 
-    print("%s" % fullpath)
+    fullpath = fullpath.decode(errors='backslashreplace')
+    print(fullpath,flush=True)
     if verbose:
         print_stats(paths,stats)
     fix(paths,stats)
@@ -167,7 +170,7 @@ def check_consistancy(fullpath,verbose,size,fix):
 
 def buildargparser():
     parser = argparse.ArgumentParser(description='audit a mergerfs mount for inconsistencies')
-    parser.add_argument('dir',type=str,
+    parser.add_argument('dir',type=os.fsencode,
                         help='starting directory')
     parser.add_argument('-v','--verbose',action='store_true',
                         help='print details of audit item')
@@ -198,7 +201,7 @@ def main():
 
     args.dir = os.path.realpath(args.dir)
     if not ismergerfs(args.dir):
-        print("%s is not a mergerfs directory" % args.dir)
+        print('{} is not a mergerfs directory'.format(args.dir))
         sys.exit(1)
 
     try:
