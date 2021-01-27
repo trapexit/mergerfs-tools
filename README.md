@@ -11,6 +11,8 @@ All of these suplimental tools are self contained Python3 apps. Make sure you ha
 
 A wrapper around the mergerfs xattr interface.
 
+[Download latest](https://raw.githubusercontent.com/trapexit/mergerfs-tools/master/src/mergerfs.ctl)
+
 ```
 $ mergerfs.ctl -h
 usage: mergerfs.ctl [-h] [-m MOUNT] {add,remove,list,get,set,info} ...
@@ -46,6 +48,8 @@ Audits permissions and ownership of files and directories in a mergerfs mount an
 
 It's possible that files or directories can be duplicated across multiple drives and that their metadata become out of sync. Permissions, ownership, etc. This can cause some strange behavior depending on the mergerfs policies used. This tool helps find and fix those inconsistancies.
 
+[Download latest](https://raw.githubusercontent.com/trapexit/mergerfs-tools/master/src/mergerfs.fsck)
+
 ```
 $ mergerfs.fsck -h
 usage: mergerfs.fsck [-h] [-v] [-s] [-f {manual,newest,nonroot}] dir
@@ -69,6 +73,8 @@ $ mergerfs.fsck -v -f manual /path/to/dir
 Duplicates files & directories across branches in a pool. The file selected for duplication is picked by the `dup` option. Files will be copied to drives with the most free space. Deleted from others if `prune` is enabled.
 
 See usage for more. Run as `root`. Requires `rsync` to be installed.
+
+[Download latest](https://raw.githubusercontent.com/trapexit/mergerfs-tools/master/src/mergerfs.dup)
 
 ```
 usage: mergerfs.dup [<options>] <dir>
@@ -105,6 +111,7 @@ optional arguments:
 Finds and removes duplicate files across mergerfs pool's branches. Use the
 `ignore`, `dedup`, and `strict` options to target specific use cases.
 
+[Download latest](https://raw.githubusercontent.com/trapexit/mergerfs-tools/master/src/mergerfs.dedup)
 
 ```
 usage: mergerfs.dedup [<options>] <dir>
@@ -160,6 +167,8 @@ Will move files from the most filled drive (percentage wise) to the least filled
 
 Run as `root`. Requires `rsync` to be installed.
 
+[Download latest](https://raw.githubusercontent.com/trapexit/mergerfs-tools/master/src/mergerfs.balance)
+
 ```
 usage: mergerfs.balance [-h] [-p PERCENTAGE] [-i INCLUDE] [-e EXCLUDE]
                         [-I INCLUDEPATH] [-E EXCLUDEPATH] [-s EXCLUDELT]
@@ -202,6 +211,8 @@ Consolidate **files** in a **single** mergerfs directory onto a **single** drive
 
 Run as `root`. Requires `rsync` to be installed.
 
+[Download latest](https://raw.githubusercontent.com/trapexit/mergerfs-tools/master/src/mergerfs.consolidate)
+
 ```
 usage: mergerfs.consolidate [<options>] <dir>
 
@@ -221,15 +232,6 @@ optional arguments:
   -h, --help             Print this help.
 ```
 
-
-### mergerfs.mktrash
-
-Will create [FreeDesktop.org Trash specification](https://specifications.freedesktop.org/trash-spec/trashspec-1.0.html) compatible directories on a mergerfs mount. Helps minimize issues with apps which `rename` into the trash directory. This shouldn't be necessary if you're not using a path perservation policy.
-
-```
-$ mergerfs.mktrash /mountpoint
-```
-
 ## SUPPORT
 
 #### Contact / Issue submission
@@ -241,17 +243,35 @@ $ mergerfs.mktrash /mountpoint
 
 This software is free to use and released under a very liberal license. That said if you like this software and would like to support its development donations are welcome.
 
-* Bitcoin (BTC): 12CdMhEPQVmjz3SSynkAEuD5q9JmhTDCZA
-* Bitcoin Cash (BCH): 1AjPqZZhu7GVEs6JFPjHmtsvmDL4euzMzp
-* Ethereum (ETH): 0x09A166B11fCC127324C7fc5f1B572255b3046E94
-* Litecoin (LTC): LXAsq6yc6zYU3EbcqyWtHBrH1Ypx4GjUjm
-* Ripple (XRP): rNACR2hqGjpbHuCKwmJ4pDpd2zRfuRATcE
-* PayPal: trapexit@spawn.link
+* PayPal: https://paypal.me/trapexit
+* GitHub Sponsors: https://github.com/sponsors/trapexit
 * Patreon: https://www.patreon.com/trapexit
+* SubscribeStar: https://www.subscribestar.com/trapexit
+* Ko-Fi: https://ko-fi.com/trapexit
+* Open Collective: https://opencollective.com/trapexit
+* Bitcoin (BTC): bc1qjwlywkqxgrxql3m7a7fvcsf3z3t98jvtekqp2j
+* Bitcoin Cash (BCH): qrvymmkvuk7703m7cx0pqxc3mz4mmsn6ngn9xw52kc
+* Bitcoin SV (BSV): 1FkFuxRtt3f8LbkpeUKRZq7gKJFzGSGgZV
+* Bitcoin Gold (BTG): Gfk8QbMJFgpMTcY7uB63axy6HU7uTPPWNj
+* Basic Attention Token (BAT): 0x6241857fa5fb7667FB7a792b13E83fDEabe96f7F
+* Chainlink (LINK): 0x6241857fa5fb7667FB7a792b13E83fDEabe96f7F
+* Dash (DASH): Xu2U3Nd3G4hM5TRQUBcP4DHJFzXH93xB84
+* Dogecoin (DOGE): DGFBPsRBYL8wHbgnvKbYkVn5FvAe854p1c
+* Ethereum (ETH): 0x6241857fa5fb7667FB7a792b13E83fDEabe96f7F
+* Filecoin (FIL): f1wpypkjcluufzo74yha7p67nbxepzizlroockgcy
+* LBRY Credits (LBC): bFusyoZPkSuzM2Pr8mcthgvkymaosJZt5r
+* Litecoin (LTC): LfL7jLNYuVpy7v5TyRyc3yRZ2uhqc4UoR3
+* Monero (XMR): 45BBZMrJwPSaFwSoqLVNEggWR2BJJsXxz7bNz8FXnnFo3GyhVJFSCrCFSS7zYwDa9r1TmFmGMxQ2HTntuc11yZ9q1LeCE8f
+* Tezos (XTZ): tz1ZxerkbbALsuU9XGV9K9fFpuLWnKAGfc1C
+* Zcash (ZEC): t1bjbVBK7tx9EGBrnD2wDfjGV9yZrcyfMmr
+* Other crypto currencies: contact me for address
 
 ## LINKS
 
-* http://github.com/trapexit/mergerfs
-* http://github.com/trapexit/mergerfs-tools
-* http://github.com/trapexit/scorch
-* http://github.com/trapexit/backup-and-recovery-howtos
+* https://spawn.link
+* https://github.com/trapexit/mergerfs
+* https://github.com/trapexit/mergerfs/wiki
+* https://github.com/trapexit/mergerfs-tools
+* https://github.com/trapexit/scorch
+* https://github.com/trapexit/bbf
+* https://github.com/trapexit/backup-and-recovery-howtos
