@@ -28,7 +28,7 @@ def find_mergerfs():
             separator = values.index('-', 6)
             fstype = values[separator + 1]
             if fstype == 'fuse.mergerfs' and mountroot == '/':
-                rv.append(mountpoint)
+                rv.append(mountpoint.encode().decode('unicode_escape'))
     return rv
 
 
