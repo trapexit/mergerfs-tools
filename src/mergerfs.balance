@@ -129,7 +129,7 @@ def build_move_file(src,dst,relfile):
     frompath = os.path.join(src,'./',relfile)
     topath   = dst+'/'
     args = ['rsync',
-            '-avlHAXWES',
+            '-avlHAXWE',
             '--relative',
             '--progress',
             '--remove-source-files',
