@@ -93,7 +93,7 @@ def build_copy_file(src,tgt,rel):
     srcpath = os.path.join(src,'./',rel)
     tgtpath = tgt + '/'
     return ['rsync',
-            '-avHAXWES',
+            '-avHAXWE',
             '--numeric-ids',
             '--progress',
             '--relative',
