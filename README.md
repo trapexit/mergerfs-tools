@@ -232,6 +232,26 @@ optional arguments:
   -h, --help             Print this help.
 ```
 
+
+### mergerfs.consolidate-dirs
+
+Consolidate directories so that each of them only exists on one a single drive, recursively. The approach is that the tool loops through given directories, looks up the source drives, checks the space used per source directory, and moves the data from the smaller ones into the largest one. Ending with a single directory.
+
+Requires `rsync` to be installed.
+
+```
+usage: mergerfs.consolidate-dirs [<options>] <dir>...
+
+positional arguments:
+  dir                    directory to consolidate, can be repeated
+
+optional arguments:
+  -v, --verbose          Verbose printing
+  -e, --execute          Execute `rsync` commands as well as print them.
+  -h, --help             Print this help.
+```
+
+
 ## SUPPORT
 
 #### Contact / Issue submission

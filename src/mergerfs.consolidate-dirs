@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+
+# Copyright (c) 2016, Antonio SJ Musumeci <trapexit@spawn.link>
+#
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+import argparse
+import ctypes
+import errno
+import fnmatch
+import io
+import os
+import shlex
+import stat
+import subprocess
+import sys
+
+
+_libc = ctypes.CDLL("libc.so.6",use_errno=True)
+_lgetxattr = _libc.lgetxattr
+_lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
+def lgetxattr(path,name):
+    if type(path) == str:
+        path = path.encode(errors='backslashreplace')
+    if type(name) == str:
+        name = name.encode(errors='backslashreplace')
+    length = 64
+    while True:
+        buf = ctypes.create_string_buffer(length)
+        res = _lgetxattr(path,name,buf,ctypes.c_size_t(length))
+        if res >= 0:
+            return buf.raw[0:res]
+        else:
+            err = ctypes.get_errno()
+            if err == errno.ERANGE:
+                length *= 2
+            elif err == errno.ENODATA:
+                return None
+            else:
+                raise IOError(err,os.strerror(err),path)
+
+
+def ismergerfs(path):
+    try:
+        lgetxattr(path,'user.mergerfs.version')
+        return True
+    except IOError as e:
+        return False
+
+
+def mergerfs_control_file(basedir):
+    if basedir == '/':
+        return None
+    ctrlfile = os.path.join(basedir,'.mergerfs')
+    if os.path.exists(ctrlfile):
+        return ctrlfile
+    else:
+        dirname = os.path.dirname(basedir)
+        return mergerfs_control_file(dirname)
+
+
+def mergerfs_srcmounts(ctrlfile):
+    srcmounts = lgetxattr(ctrlfile,'user.mergerfs.srcmounts')
+    srcmounts = srcmounts.decode(errors='backslashreplace').split(':')
+    return srcmounts
+
+
+def execute_cmd(args):
+    return subprocess.call(args)
+
+
+def execute_cmds(args):
+    if isinstance(args[0], list):
+        for args2 in args:
+            execute_cmd(args2)
+    else:
+        return execute_cmd(args)
+
+
+def print_margs(margs):
+    for args in margs[:-1]:
+        quoted = [shlex.quote(arg) for arg in args]
+        print(' '.join(quoted), end = ' && ')
+    
+    args = margs[-1]
+    quoted = [shlex.quote(arg) for arg in args]
+    print(' '.join(quoted))
+ 
+   
+def build_move_file(src,tgt):
+    return ['rsync',
+            '-avHAXWES',
+            '--numeric-ids',
+            '--progress',
+            '--remove-source-files',
+            src,
+            tgt]
+
+
+def print_help():
+    help = \
+'''
+usage: mergerfs.consolidate-dirs [<options>] <dir>
+
+Consolidate listed directories into a single drive by moving the smaller ones into the largest.
+Automatically skips directories that are not spread between multiple source drives.
+
+Usage example:
+user@host:/srv/mergerfs/movies$ mergerfs.consolidate-dirs *
+
+positional arguments:
+  dirs                   Directories to consolidate
+
+optional arguments:
+  -v, --verbose          Verbose
+  -e, --execute          Execute `rsync` commands as well as print them.
+  -h, --help             Print this help.
+'''
+    print(help)
+
+
+def buildargparser():
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('dirs',
+                        type=str,
+                        nargs='*',
+                        default=None)
+    parser.add_argument('-v','--verbose',
+                        dest='verbose',
+                        action='store_true')
+    parser.add_argument('-e','--execute',
+                        dest='execute',
+                        action='store_true')
+    parser.add_argument('-h','--help',
+                        action='store_true')
+
+    return parser
+
+
+def mergerfs_sourcepaths(fullpath):
+    attr = xattr_allpaths(fullpath)
+    if not attr:
+        dirname  = os.path.dirname(fullpath)
+        basename = os.path.basename(fullpath)
+        attr     = xattr_allpaths(dirname)
+        attr     = attr.split('\0')
+        attr     = [os.path.join(path,basename)
+                    for path in attr
+                    if os.path.lexists(os.path.join(path,basename))]
+    else:
+        attr = attr.decode('utf-8').split('\0')
+    return [x.rstrip('/') for x in attr]
+
+def xattr_allpaths(fullpath):
+    return lgetxattr(fullpath,'user.mergerfs.allpaths')
+
+
+
+def main():
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer,
+                                  encoding='utf8',
+                                  errors='backslashreplace',
+                                  line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer,
+                                  encoding='utf8',
+                                  errors='backslashreplace',
+                                  line_buffering=True)
+
+    parser = buildargparser()
+    args = parser.parse_args()
+
+    if args.help or not args.dirs:
+        print_help()
+        sys.exit(0)
+
+    execute = args.execute
+    verbose = args.verbose
+
+
+    real_dirs = []
+    for dir in args.dirs:
+        real_dir = os.path.realpath(dir)
+
+        if not os.path.isdir(real_dir):
+            if(verbose):
+                print("%s is not a directory, skipping" % real_dir)
+                continue
+
+        ctrlfile = mergerfs_control_file(real_dir)
+        if not ismergerfs(ctrlfile):
+            print("%s is not a mergerfs mount" % real_dir)
+            sys.exit(1)
+
+        real_dirs.append( real_dir )
+
+
+    try:
+        for dir in real_dirs:
+            if(verbose):
+                print("Considering %s" % dir)
+            sourcepaths = mergerfs_sourcepaths(dir)
+            if(len(sourcepaths) == 1):
+                if(verbose):
+                    print("  Already consolidated, skipping")
+                continue
+
+            sizes = {}
+            for sourcepath in sourcepaths:
+                for (root,dirs,files) in os.walk(sourcepath):
+                    if len(files) <= 1:
+                        continue
+
+                    total_size = 0
+                    for file in files:
+                        fullpath = os.path.join(root,file)
+                        st = os.lstat(fullpath)
+                        if not stat.S_ISREG(st.st_mode):
+                            continue
+                        total_size += st.st_size
+                    sizes[sourcepath] = total_size
+
+            sizes = sorted(sizes.items(), key=lambda item: item[1])
+
+            if(verbose):
+                for path,size in sizes:
+                    print("  %s : %d bytes" % (path, size))
+
+            tgt = os.path.dirname(sizes[-1][0]).rstrip('/') + '/'
+            for src,size in sizes[:-1]:
+                margs = [ build_move_file(src,tgt), [ 'rmdir', src ] ]
+                print_margs(margs)
+                if execute:
+                    if(verbose):
+                        print("Consolidating %s" % dir)
+                    execute_cmds(margs)
+                    
+    except (KeyboardInterrupt,BrokenPipeError):
+        pass
+        
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+   main()
