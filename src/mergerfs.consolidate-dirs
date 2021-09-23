@@ -217,8 +217,6 @@ def main():
             sizes = {}
             for sourcepath in sourcepaths:
                 for (root,dirs,files) in os.walk(sourcepath):
-                    if len(files) <= 1:
-                        continue
 
                     total_size = 0
                     for file in files:
@@ -237,7 +235,7 @@ def main():
 
             tgt = os.path.dirname(sizes[-1][0]).rstrip('/') + '/'
             for src,size in sizes[:-1]:
-                margs = [ build_move_file(src,tgt), [ 'rmdir', src ] ]
+                margs = [ build_move_file(src,tgt), [ 'find', src, '-type', 'd', '-empty', '-delete' ] ]
                 print_margs(margs)
                 if execute:
                     if(verbose):
