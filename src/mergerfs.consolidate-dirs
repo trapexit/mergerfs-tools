@@ -164,6 +164,25 @@ def mergerfs_sourcepaths(fullpath):
 def xattr_allpaths(fullpath):
     return lgetxattr(fullpath,'user.mergerfs.allpaths')
 
+def dir_size(path):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # skip if it is symbolic link
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+
+    return total_size
+
+def bytes_to_human(num):
+    for unit in ["", "K", "M", "G", "T"]:
+        if abs(num) < 1024.0 or unit == 'T':
+            return "%3.1f%s" % (num, unit)
+        num /= 1024.0
+    return None
+
+
 
 
 def main():
@@ -216,22 +235,13 @@ def main():
 
             sizes = {}
             for sourcepath in sourcepaths:
-                for (root,dirs,files) in os.walk(sourcepath):
-
-                    total_size = 0
-                    for file in files:
-                        fullpath = os.path.join(root,file)
-                        st = os.lstat(fullpath)
-                        if not stat.S_ISREG(st.st_mode):
-                            continue
-                        total_size += st.st_size
-                    sizes[sourcepath] = total_size
+                sizes[sourcepath] = dir_size(sourcepath)
 
             sizes = sorted(sizes.items(), key=lambda item: item[1])
 
             if(verbose):
                 for path,size in sizes:
-                    print("  %s : %d bytes" % (path, size))
+                    print("  %s %s" % (bytes_to_human(size), path))
 
             tgt = os.path.dirname(sizes[-1][0]).rstrip('/') + '/'
             for src,size in sizes[:-1]:
