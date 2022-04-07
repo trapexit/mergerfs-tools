@@ -127,13 +127,19 @@ def remove(files,execute,verbose):
 def print_stats(stats):
     for i in range(0,len(stats)):
         print("#  %i: %s" % (i+1,stats[i][0]))
+        path = os.path.realpath(stats[i][0])
         data = ("#   - uid: {0:5}; gid: {1:5}; mode: {2:6o}; "
-                "size: {3}; mtime: {4}").format(
+                "size: {3}; mtime: {4} inode: {5} dev: {6} nlink: {7}\n" 
+                "#   - realpath: {8}").format(
             stats[i][1].st_uid,
             stats[i][1].st_gid,
             stats[i][1].st_mode,
             sizeof_fmt(stats[i][1].st_size),
-            stats[i][1].st_mtime)
+            stats[i][1].st_mtime,
+            stats[i][1].st_ino,
+            stats[i][1].st_dev,
+            stats[i][1].st_nlink,
+            path)
         print(data)
 
 
@@ -158,12 +164,14 @@ def manual_dedup(fullpath,stats):
             value = int(value) - 1
             if value < 0 or value >= len(stats):
                 raise ValueError
+            selected = stats[value]
             stats.remove(stats[value])
             done = True
         except NameError:
             print("Input error: enter a value [1-{0}] or skip by entering 's'".format(len(stats)))
         except ValueError:
             print("Input error: enter a value [1-{0}] or skip by entering 's'".format(len(stats)))
+    return selected
 
 
 def mtime_all(stats):
@@ -200,12 +208,12 @@ def short_md5sums_all(stats):
 
 def oldest_dedup(fullpath,stats):
     if size_all(stats) and mtime_all(stats):
-        drive_with_most_space_dedup(fullpath,stats)
-        return
+        return drive_with_most_space_dedup(fullpath,stats)
 
     stats.sort(key=lambda st: st[1].st_mtime)
     oldest = stats[0]
     stats.remove(oldest)
+    return oldest
 
 
 def strict_oldest_dedup(fullpath,stats):
@@ -215,16 +223,17 @@ def strict_oldest_dedup(fullpath,stats):
     stats.remove(oldest)
     if mtime_any(oldest[1].st_mtime,stats):
         stats.clear()
+    return oldest
 
 
 def newest_dedup(fullpath,stats):
     if size_all(stats) and mtime_all(stats):
-        drive_with_most_space_dedup(fullpath,stats)
-        return
+        return drive_with_most_space_dedup(fullpath,stats)
 
     stats.sort(key=lambda st: st[1].st_mtime,reverse=True)
     newest = stats[0]
     stats.remove(newest)
+    return newest
 
 
 def strict_newest_dedup(fullpath,stats):
@@ -234,16 +243,17 @@ def strict_newest_dedup(fullpath,stats):
     stats.remove(newest)
     if mtime_any(newest[1].st_mtime,stats):
         stats.clear()
+    return newest
 
 
 def largest_dedup(fullpath,stats):
     if size_all(stats) and mtime_all(stats):
-        drive_with_most_space_dedup(fullpath,stats)
-        return
+        return drive_with_most_space_dedup(fullpath,stats)
 
     stats.sort(key=lambda st: st[1].st_size,reverse=True)
     largest = stats[0]
     stats.remove(largest)
+    return largest
 
 
 def strict_largest_dedup(fullpath,stats):
@@ -253,16 +263,17 @@ def strict_largest_dedup(fullpath,stats):
     stats.remove(largest)
     if size_any(largest[1].st_size,stats):
         stats.clear()
+    return largest
 
 
 def smallest_dedup(fullpath,stats):
     if size_all(stats) and mtime_all(stats):
-        drive_with_most_space_dedup(fullpath,stats)
-        return
+        return drive_with_most_space_dedup(fullpath,stats)
 
     stats.sort(key=lambda st: st[1].st_size)
     smallest = stats[0]
     stats.remove(smallest)
+    return smallest
 
 
 def strict_smallest_dedup(fullpath,stats):
@@ -272,6 +283,7 @@ def strict_smallest_dedup(fullpath,stats):
     stats.remove(smallest)
     if size_any(smallest[1].st_size,stats):
         stats.clear()
+    return smallest
 
 
 def calc_space_free(stat):
@@ -283,6 +295,7 @@ def drive_with_most_space_dedup(fullpath,stats):
     stats.sort(key=calc_space_free,reverse=True)
     largest = stats[0]
     stats.remove(largest)
+    return largest
 
 
 def mergerfs_getattr_dedup(origpath,stats):
@@ -292,6 +305,7 @@ def mergerfs_getattr_dedup(origpath,stats):
             continue
         stats.remove((path,stat))
         break
+    return fullpath
 
 
 def get_dedupfun(name,strict):
@@ -372,7 +386,7 @@ def dedup(fullpath,verbose,ignorefun,execute,dedupfun):
         print_stats(stats)
 
     try:
-        dedupfun(fullpath,stats)
+        keep = dedupfun(fullpath,stats)
         if not stats:
             if verbose >= 2:
                 print('# skipped:',fullpath)
@@ -383,9 +397,32 @@ def dedup(fullpath,verbose,ignorefun,execute,dedupfun):
                 print('#',fullpath)
             if verbose >= 3:
                 print_stats(stats)
+                #print('# Keeping:',keep[0])
 
         for (path,stat) in stats:
             try:
+                if (os.path.realpath(path) == os.path.realpath(keep[0])):
+                    print("# Same realpath safety check FAILED - deletion candidate file: \n"
+                          "#   %s\n"
+                          "# points to the same realpath location as the kept variant:\n"
+                          "#   %s\n"
+                          "# realpath location:\n"
+                          "#   %s\n"
+                          "# => skipping the deletion\n"
+                          % (path,keep[0],os.path.realpath(path)) )
+                    stats.remove((path,stat))
+                    continue
+
+                #TODO: Possibly add also st_nlink=1 check if we want to be more lenient
+                if ((keep[1].st_ino == stat.st_ino) and (keep[1].st_dev == stat.st_dev)):
+                    print("# Same file safety check FAILED - deletion candidate file: \n"
+                          "#   %s\n"
+                          "# has same INODE and DEV no. as the kept file variant:\n"
+                          "#   %s\n"
+                          "# => skipping the deletion\n"
+                          % (path,keep[0]) )
+                    stats.remove((path,stat))
+                    continue
                 if verbose:
                     print('rm -vf',shlex.quote(path))
                 if execute:
