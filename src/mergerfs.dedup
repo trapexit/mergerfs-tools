@@ -443,6 +443,8 @@ optional arguments:
                          Can be used multiple times.
   -E, --exclude=         fnmatch compatible filter to exclude files.
                          Can be used multiple times.
+  -D, --exclude-dir=     Directories to exclude from search.
+                         Can be used multiple times.
 
 '''
     print(help)
@@ -486,6 +488,11 @@ def buildargparser():
                         type=str,
                         action='append',
                         default=[])
+    parser.add_argument('-D','--exclude-dir',
+                        dest='excludedir',
+                        type=str,
+                        action='append',
+                        default=[])
     parser.add_argument('-h','--help',
                         action='store_true')
 
@@ -523,7 +530,8 @@ def main():
 
     total_size = 0
     try:
-        for (dirname,dirnames,filenames) in os.walk(args.dir):
+        for (dirname,dirnames,filenames) in os.walk(args.dir, topdown=True):
+            dirnames[:] = [dirname for dirname in dirnames if dirname not in args.excludedir]
             for filename in filenames:
                 if match(filename,excludes):
                     continue
