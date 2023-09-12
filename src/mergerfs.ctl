@@ -66,7 +66,7 @@ def control_file(path):
 
 
 def add_srcmount(ctrlfile,srcmount):
-    key   = b'user.mergerfs.srcmounts'
+    key   = b'user.mergerfs.branches'
     value = b'+' + srcmount.encode()
     try:
         os.setxattr(ctrlfile,key,value)
@@ -75,7 +75,7 @@ def add_srcmount(ctrlfile,srcmount):
 
 
 def remove_srcmount(ctrlfile,srcmount):
-    key   = b'user.mergerfs.srcmounts'
+    key   = b'user.mergerfs.branches'
     value = b'-' + srcmount.encode()
     try:
         os.setxattr(ctrlfile,key,value)
