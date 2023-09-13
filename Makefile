@@ -33,7 +33,8 @@ APPS = mergerfs.fsck \
        mergerfs.dedup \
        mergerfs.ctl \
        mergerfs.balance \
-       mergerfs.consolidate
+       mergerfs.consolidate \
+       mergerfs.consolidate-dirs
 
 install:
 	@for APP in $(APPS); \
