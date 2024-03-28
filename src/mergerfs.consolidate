@@ -136,6 +136,25 @@ def build_move_file(src,tgt,rel):
             srcpath,
             tgtpath]
 
+def get_mount(basedir):
+    current_dir = basedir
+
+    while not os.path.ismount(current_dir):
+        current_dir = os.path.dirname(current_dir)
+
+    return current_dir
+
+def get_inode_info(mount_point):
+    inode_stats = {}
+    for (root,dirs,files) in os.walk(mount_point):
+        for file in files:
+            fullpath = os.path.join(root,file)
+            st = os.lstat(fullpath)
+            new_list = inode_stats.get(st.st_ino, [])
+            new_list.append(fullpath)
+            inode_stats[st.st_ino] = new_list
+
+    return inode_stats
 
 def print_help():
     help = \
@@ -156,6 +175,7 @@ optional arguments:
                          Can be used multiple times.
   -E, --exclude-path=    fnmatch compatible path exclude filter.
                          Can be used multiple times.
+  -H, --move-hardlinks   Copy all associated hardlinks when moving files.
   -e, --execute          Execute `rsync` commands as well as print them.
   -h, --help             Print this help.
 '''
@@ -190,6 +210,8 @@ def buildargparser():
                         dest='execute',
                         action='store_true')
     parser.add_argument('-h','--help',
+                        action='store_true')
+    parser.add_argument('-H','--move-hardlinks',
                         action='store_true')
 
     return parser
@@ -226,9 +248,19 @@ def main():
     path_includes = ['*'] if not args.includepath else args.includepath
     path_excludes = args.excludepath
     srcmounts     = mergerfs_srcmounts(ctrlfile)
+    move_hardlinks = args.move_hardlinks
 
     mount_stats = get_stats(srcmounts)
+    base_mount = get_mount(basedir)
     try:
+        # dictionary containing inode:[]paths, can be used to lookup hardlinks and rebuild the links on a new disk
+        # really inefficient, can be done in the main loop by deferring the rsync commands but this should suffice
+        # as this script shouldn't be ran regularly
+        inode_stats = {}
+        if move_hardlinks:
+            print("collecting hardlinks, this may take a while")
+            inode_stats = get_inode_info(base_mount)
+        
         for (root,dirs,files) in os.walk(basedir):
             if len(files) <= 1:
                 continue
@@ -265,9 +297,31 @@ def main():
 
                 args = build_move_file(srcpath,tgtpath,relpath)
 
+                copy_hardlinks = False
+                # if file has hardlinks, recreate them on tgtpath
+                if move_hardlinks and st.st_nlink > 1:
+                    copy_hardlinks = True
+
                 print_args(args)
                 if execute:
                     execute_cmd(args)
+                if copy_hardlinks:
+                    for path in inode_stats[st.st_ino]:
+                        if relpath in path:
+                            continue
+                        # proceed with linking
+                        original_path = tgtpath + relpath
+                        to_be_linked = path.replace(base_mount, tgtpath)
+                        to_be_deleted = path.replace(base_mount, srcpath)
+
+                        print(f"ln {original_path} {to_be_linked}")
+                        print(f"rm {to_be_deleted}")
+                        if execute:
+                            # create dir on tgt if needed
+                            os.makedirs(os.path.dirname(to_be_linked), exist_ok=True)
+                            os.link(original_path, to_be_linked)
+                            # remove file on src
+                            os.remove(to_be_deleted)
     except (KeyboardInterrupt,BrokenPipeError):
         pass
 
