@@ -24,11 +24,24 @@ import os
 import random
 import shlex
 import sys
+import zlib
 
+
+# pseudo hasher for crc32 / adler32
+class p_hasher:
+    _alg = None
+    _dg = ''
+    def __init__(self, alg='crc32'):
+        self._alg = zlib.adler32 if alg == 'adler32' else zlib.crc32
+    def update(self, data):
+        self._dg += str(self._alg(data))
+    def hexdigest(self):
+        return self._dg
 
 _libc = ctypes.CDLL("libc.so.6",use_errno=True)
 _lgetxattr = _libc.lgetxattr
 _lgetxattr.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t]
+_hashers = ['md5']
 def lgetxattr(path,name):
     if type(path) == str:
         path = path.encode(errors='backslashreplace')
@@ -184,17 +197,25 @@ def size_any(size,stats):
     return any([st.st_size == size for (path,st) in stats])
 
 
-def md5sums_all(stats):
+def hashes_all(stats):
     if size_all(stats):
-        hashval = hash_file(stats[0][0])
-        return all(hash_file(path) == hashval for (path,st) in stats[1:])
+        if not short_hashes_all(stats):
+            return False
+        for h in _hashers:
+            hashval = hash_file(stats[0][0], p_hasher(h) if h in ['adler32', 'crc32'] else hashlib.new(h))
+            if not all(hash_file(path, p_hasher(h) if h in ['adler32', 'crc32'] else hashlib.new(h)) == hashval for (path,st) in stats[1:]):
+                return False
+        return True
     return False
 
 
-def short_md5sums_all(stats):
+def short_hashes_all(stats):
     if size_all(stats):
-        hashval = short_hash_file(stats[0][0])
-        return all(short_hash_file(path) == hashval for (path,st) in stats[1:])
+        for h in _hashers:
+            hashval = short_hash_file(stats[0][0], p_hasher(h) if h in ['adler32', 'crc32'] else hashlib.new(h))
+            if not all(short_hash_file(path, p_hasher(h) if h in ['adler32', 'crc32'] else hashlib.new(h)) == hashval for (path,st) in stats[1:]):
+                return False
+        return True
     return False
 
 
@@ -323,10 +344,10 @@ def get_ignorefun(name):
         'diff-time': lambda x: not mtime_all(x),
         'same-size': size_all,
         'diff-size': lambda x: not size_all(x),
-        'same-hash': md5sums_all,
-        'diff-hash': lambda x: not md5sums_all(x),
-        'same-short-hash': short_md5sums_all,
-        'diff-short-hash': lambda x: not short_md5sums_all(x)
+        'same-hash': hashes_all,
+        'diff-hash': lambda x: not hashes_all(x),
+        'same-short-hash': short_hashes_all,
+        'diff-short-hash': lambda x: not short_hashes_all(x)
     }
 
     return funs[name]
@@ -421,12 +442,18 @@ optional arguments:
                          * diff-size       : have different sizes
                          * same-time       : have the same mtime
                          * diff-time       : have different mtimes
-                         * same-hash       : have the same md5sum
-                         * diff-hash       : have different md5sums
-                         * same-short-hash : have the same short md5sums
-                         * diff-short-hash : have different short md5sums
+                         * same-hash       : have the same hashes
+                         * diff-hash       : have different hashes
+                         * same-short-hash : have the same short hashes
+                         * diff-short-hash : have different short hashes
                          'hash' is expensive. 'short-hash' far less
                          expensive, not as safe, but pretty good.
+  -H, --hash=            Hashers used with -i (default: md5).
+                         Can be used multiple times, used in turn.
+                         Available values: sha1, sha224, sha256, sha384,
+                         sha512, sha3_224, sha3_256, sha3_384, sha3_512,
+                         shake_128, shake_256, blake2b, blake2, md5,
+                         adler32, crc32.
   -d, --dedup=           What file to *keep* (default: mergerfs)
                          * manual        : ask user
                          * oldest        : file with smallest mtime
@@ -469,6 +496,15 @@ def buildargparser():
                                  'same-hash','diff-hash',
                                  'same-short-hash',
                                  'diff-short-hash'])
+    parser.add_argument('-H','--hash',
+                        type=str,
+                        choices=['sha1', 'sha224', 'sha256', 'sha384',
+                                 'sha512', 'sha3_224', 'sha3_256',
+                                 'sha3_384', 'sha3_512', 'shake_128',
+                                 'shake_256', 'blake2b', 'blake2',
+                                 'md5', 'adler32', 'crc32'],
+                        action='append',
+                        default=[])
     parser.add_argument('-d','--dedup',
                         choices=['manual',
                                  'oldest','newest',
@@ -527,6 +563,9 @@ def main():
     execute   = args.execute
     includes  = ['*'] if not args.include else args.include
     excludes  = args.exclude
+    if args.hash:
+        global _hashers
+        _hashers = args.hash
 
     total_size = 0
     try:
