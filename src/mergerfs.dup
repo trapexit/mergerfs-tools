@@ -343,6 +343,10 @@ def main():
                 relpath  = mergerfs_relpath(fullpath)
                 existing = mergerfs_all_basepaths(fullpath,relpath)
 
+                if not existing:
+                    printf("Missing %s on all paths" % relpath)
+                    continue
+
                 srcpath  = dupfun(basepath,relpath,existing)
                 srcfile  = os.path.join(srcpath,relpath)
                 srcfile_size = os.lstat(srcfile).st_size
