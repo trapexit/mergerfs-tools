@@ -92,6 +92,11 @@ def exclude_by_size(filepath,exclude_lt,exclude_gt):
     except:
         return False
 
+def exclude_by_nlink_count(filepath):
+    info = os.stat(filepath)
+    if info.st_nlink > 1:
+        return True
+    return False
 
 def find_a_file(src,
                 relpath,
@@ -111,6 +116,8 @@ def find_a_file(src,
             if not match(filepath,path_includes):
                 continue
             if exclude_by_size(filepath,exclude_lt,exclude_gt):
+                continue
+            if exclude_by_nlink_count(filepath):
                 continue
             return os.path.relpath(filepath,src)
     return None
@@ -172,7 +179,7 @@ def human_to_bytes(s):
 
 
 def buildargparser():
-    parser = argparse.ArgumentParser(description='balance files on a mergerfs mount based on percentage drive filled')
+    parser = argparse.ArgumentParser(description='balance files on a mergerfs mount based on percentage drive filled. files with hardlinks won't be moved')
     parser.add_argument('dir',
                         type=str,
                         help='starting directory')
