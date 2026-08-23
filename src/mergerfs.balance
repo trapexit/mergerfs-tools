@@ -120,6 +120,23 @@ def execute(args):
     return subprocess.call(args)
 
 
+def dir_times(path):
+    try:
+        st = os.stat(path)
+        return (st.st_atime,st.st_mtime)
+    except OSError:
+        return None
+
+
+def restore_dir_times(path,times):
+    if not times:
+        return
+    try:
+        os.utime(path,times)
+    except OSError:
+        pass
+
+
 def print_args(args):
     quoted = [shlex.quote(arg) for arg in args]
     print(' '.join(quoted))
@@ -275,7 +292,15 @@ def main():
             args = build_move_file(fromdrive,todrive,relfilepath)
             print('file: {}\nfrom: {}\nto:   {}'.format(relfilepath,fromdrive,todrive))
             print_args(args)
+
+            # --remove-source-files unlinks each file after transfer, which
+            # updates the mtime of the directory it came from. rsync restores
+            # times on the destination, but nothing restores them here.
+            srcdir   = os.path.dirname(os.path.join(fromdrive,relfilepath))
+            srctimes = dir_times(srcdir)
             rv = execute(args)
+            restore_dir_times(srcdir,srctimes)
+
             if rv:
                 print('ERROR - exited with exit code: {}'.format(rv))
                 break
