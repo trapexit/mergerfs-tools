@@ -27,8 +27,7 @@ INSTALLBINDIR  = $(DESTDIR)$(BINDIR)
 INSTALLSBINDIR = $(DESTDIR)$(SBINDIR)
 INSTALLMAN1DIR = $(DESTDIR)$(MAN1DIR)
 
-APPS = mergerfs.fsck \
-       mergerfs.mktrash \
+APPS = mergerfs.mktrash \
        mergerfs.dup \
        mergerfs.dedup \
        mergerfs.ctl \
