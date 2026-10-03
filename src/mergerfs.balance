@@ -116,20 +116,33 @@ def find_a_file(src,
     return None
 
 
-def execute(args):
-    return subprocess.call(args)
+def execute(args1,args):
+    args1 = [shlex.quote(arg) for arg in args1]
+    args = [shlex.quote(arg) for arg in args]
+    return subprocess.call(" ".join(args1)+" && "+" ".join(args),shell=True)
 
 
-def print_args(args):
+def print_args(args1,args):
+    quoted1 = [shlex.quote(arg) for arg in args1]
     quoted = [shlex.quote(arg) for arg in args]
+    print(' '.join(quoted1))
     print(' '.join(quoted))
 
-
-def build_move_file(src,dst,relfile):
+def build_copy_file(src,dst,relfile):       #copy files to target folder
+    frompath = os.path.join(src,'./',relfile)
+    topath   = dst+'/'
+    args1 = ['rsync',
+            '-avlHAXWE',
+            '--relative',
+            '--progress',
+            frompath,
+            topath]
+    return args1
+def build_move_file(src,dst,relfile):       #remove files only after source and target checksum match (-c)
     frompath = os.path.join(src,'./',relfile)
     topath   = dst+'/'
     args = ['rsync',
-            '-avlHAXWE',
+            '-avlHAXWEc',
             '--relative',
             '--progress',
             '--remove-source-files',
@@ -271,11 +284,11 @@ def main():
             if fromdrive == todrive:
                 print('Source drive == target drive: exiting...')
                 break
-
+            args1 = build_copy_file(fromdrive,todrive,relfilepath)
             args = build_move_file(fromdrive,todrive,relfilepath)
             print('file: {}\nfrom: {}\nto:   {}'.format(relfilepath,fromdrive,todrive))
-            print_args(args)
-            rv = execute(args)
+            print_args(args1,args)
+            rv = execute(args1,args)
             if rv:
                 print('ERROR - exited with exit code: {}'.format(rv))
                 break
